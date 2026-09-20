@@ -155,14 +155,19 @@ public class DateFieldSuite extends TestSuite {
     }
 
     /**
-     * CLDC 1.1 has no Calendar.set(year, month, day, hour, minute, second), only
-     * set(field, value), set(year, month, day) and set(year, month, day, hour,
-     * minute). So the seconds and the milliseconds are cleared separately.
+     * CLDC 1.1 has exactly one Calendar setter, set(int field, int value): the
+     * convenience overloads set(year, month, day) and set(year, month, day,
+     * hour, minute) of the desktop JDK do not exist. Every field is therefore
+     * set on its own.
      */
     private static Calendar calendar(TimeZone zone, int year, int month, int day, int hour,
             int minute) {
         Calendar calendar = Calendar.getInstance(zone);
-        calendar.set(year, month, day, hour, minute);
+        calendar.set(Calendar.YEAR, year);
+        calendar.set(Calendar.MONTH, month);
+        calendar.set(Calendar.DAY_OF_MONTH, day);
+        calendar.set(Calendar.HOUR_OF_DAY, hour);
+        calendar.set(Calendar.MINUTE, minute);
         calendar.set(Calendar.SECOND, 0);
         calendar.set(Calendar.MILLISECOND, 0);
         return calendar;
