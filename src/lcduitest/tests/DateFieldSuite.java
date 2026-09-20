@@ -73,10 +73,8 @@ public class DateFieldSuite extends TestSuite {
         add(new TestCase("date_round_trip") {
             public void run() {
                 DateField field = new DateField("when", DateField.DATE);
-                Calendar calendar = Calendar.getInstance();
-                calendar.set(2024, Calendar.MARCH, 17, 0, 0, 0);
-                calendar.set(Calendar.MILLISECOND, 0);
-                Date input = calendar.getTime();
+                Date input = calendar(TimeZone.getDefault(), 2024, Calendar.MARCH, 17, 0, 0)
+                        .getTime();
                 field.setDate(input);
                 Date output = field.getDate();
                 Assert.assertNotNull("getDate() must return the date that was set", output);
@@ -105,10 +103,9 @@ public class DateFieldSuite extends TestSuite {
                         TimeZone.getTimeZone("GMT"));
                 Assert.assertEquals("the mode is kept", DateField.DATE_TIME,
                         field.getInputMode());
-                Calendar calendar = Calendar.getInstance(TimeZone.getTimeZone("GMT"));
-                calendar.set(2020, Calendar.JANUARY, 2, 3, 4, 0);
-                calendar.set(Calendar.MILLISECOND, 0);
-                field.setDate(calendar.getTime());
+                Date input = calendar(TimeZone.getTimeZone("GMT"), 2020, Calendar.JANUARY,
+                        2, 3, 4).getTime();
+                field.setDate(input);
                 Date output = field.getDate();
                 Assert.assertNotNull("getDate() of a field with a time zone", output);
                 Calendar check = Calendar.getInstance(TimeZone.getTimeZone("GMT"));
@@ -122,10 +119,9 @@ public class DateFieldSuite extends TestSuite {
         add(new TestCase("time_mode_ignores_the_date_part") {
             public void run() {
                 DateField field = new DateField("t", DateField.TIME);
-                Calendar epochDay = Calendar.getInstance();
-                epochDay.set(1970, Calendar.JANUARY, 1, 13, 45, 0);
-                epochDay.set(Calendar.MILLISECOND, 0);
-                field.setDate(epochDay.getTime());
+                Date input = calendar(TimeZone.getDefault(), 1970, Calendar.JANUARY, 1,
+                        13, 45).getTime();
+                field.setDate(input);
                 Date output = field.getDate();
                 Assert.assertNotNull("getDate() in TIME mode", output);
                 Calendar check = Calendar.getInstance();
@@ -156,5 +152,19 @@ public class DateFieldSuite extends TestSuite {
                         field.getPreferredHeight() > 0);
             }
         }.severity(TestCase.SHOULD));
+    }
+
+    /**
+     * CLDC 1.1 has no Calendar.set(year, month, day, hour, minute, second), only
+     * set(field, value), set(year, month, day) and set(year, month, day, hour,
+     * minute). So the seconds and the milliseconds are cleared separately.
+     */
+    private static Calendar calendar(TimeZone zone, int year, int month, int day, int hour,
+            int minute) {
+        Calendar calendar = Calendar.getInstance(zone);
+        calendar.set(year, month, day, hour, minute);
+        calendar.set(Calendar.SECOND, 0);
+        calendar.set(Calendar.MILLISECOND, 0);
+        return calendar;
     }
 }
