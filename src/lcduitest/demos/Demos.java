@@ -26,6 +26,11 @@ public class Demos {
                     return new CanvasDemos.Shapes();
                 }
             },
+            new Demo("Arcs: 4 of each type, all quadrants, sweeping angles") {
+                public Displayable createScreen() {
+                    return new CanvasDemos.Arcs();
+                }
+            },
             new Demo("Fonts, sizes, styles, text anchors") {
                 public Displayable createScreen() {
                     return new CanvasDemos.Text();

@@ -561,4 +561,129 @@ public class CanvasDemos {
             repaint();
         }
     }
+
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * The arc torture test: four arcs of each type - outlined and filled - in
+     * the four quadrants, plus four more of each type whose start angle and arc
+     * angle keep moving.
+     *
+     * The two static rows answer "which quadrant does startAngle put the arc
+     * in?": 0 degrees is at 3 o'clock, positive angles run counter-clockwise,
+     * so 0/90/180/270 give the right/top/left/bottom quadrant with arcAngle 90.
+     * The two moving rows sweep arcAngle from +720 down to -720 and back and
+     * let startAngle run past 360 and below 0, which exercises angle
+     * normalisation, both sweep directions, arcs longer than a full circle and
+     * the pie-slice shape of fillArc with a negative arc angle.
+     *
+     * The second and third cell of a moving row use a wide and a tall bounding
+     * box: 45 degrees always falls on the line from the centre of the box to
+     * its corner, so a box that is not square skews the angles instead of
+     * drawing a circle.
+     */
+    static class Arcs extends Base {
+
+        private static final int ROWS = 4;
+        private static final int COLUMNS = 4;
+        private static final int FRAME_MS = 60;
+
+        /** Steps the whole animation, incremented once per paint. */
+        private int phase;
+        private Thread animator;
+        private boolean running;
+
+        Arcs() {
+            super("Arcs: quadrants + angle sweep");
+            setTitle("Arcs");
+            hint("0 deg = 3 o'clock, + = counter-clockwise. Any key steps the sweep.");
+        }
+
+        protected void showNotify() {
+            running = true;
+            if (animator == null) {
+                animator = new Thread(new Runnable() {
+                    public void run() {
+                        while (running) {
+                            repaint();
+                            try {
+                                Thread.sleep(FRAME_MS);
+                            } catch (InterruptedException e) {
+                                return;
+                            }
+                        }
+                    }
+                });
+                animator.start();
+            }
+        }
+
+        protected void hideNotify() {
+            running = false;
+            animator = null;
+        }
+
+        protected void keyPressed(int keyCode) {
+            phase += 3;
+            repaint();
+        }
+
+        protected void paintBody(Graphics g, int x, int y, int w, int h) {
+            phase = (phase + 1) % 100000;
+            Font small = Font.getFont(Font.FACE_SYSTEM, Font.STYLE_PLAIN, Font.SIZE_SMALL);
+            g.setFont(small);
+            int label = small.getHeight();
+            int cellWidth = w / COLUMNS;
+            int cellHeight = h / ROWS;
+            if (cellWidth < 8 || cellHeight < 8) {
+                g.drawString("screen too small for the arc grid", x + 2, y + 2,
+                        Graphics.TOP | Graphics.LEFT);
+                return;
+            }
+            for (int row = 0; row < ROWS; row++) {
+                for (int column = 0; column < COLUMNS; column++) {
+                    int cellX = x + column * cellWidth;
+                    int cellY = y + row * cellHeight;
+                    int boxWidth = cellWidth - 4;
+                    int boxHeight = cellHeight - label - 4;
+                    int startAngle;
+                    int arcAngle;
+                    String text;
+                    if (row < 2) {
+                        // the fixed reference: one arc per quadrant
+                        startAngle = column * 90;
+                        arcAngle = 90;
+                        text = startAngle + " deg";
+                    } else {
+                        // the moving arcs, each cell with its own phase
+                        startAngle = (phase * 4 + column * 60) % 1080 - 360;
+                        arcAngle = 720 - (phase * 8 + column * 90) % 1440;
+                        text = startAngle + "/" + arcAngle;
+                        if (column == 1) {
+                            boxHeight = boxHeight / 2;      // a wide box
+                        } else if (column == 2) {
+                            boxWidth = boxWidth / 2;        // a tall box
+                        }
+                    }
+                    if (boxWidth < 3 || boxHeight < 3) {
+                        continue;
+                    }
+                    int boxX = cellX + (cellWidth - boxWidth) / 2;
+                    int boxY = cellY + (cellHeight - label - boxHeight) / 2;
+                    g.setGrayScale(170);
+                    g.setStrokeStyle(Graphics.DOTTED);
+                    g.drawRect(boxX, boxY, boxWidth, boxHeight);
+                    g.setStrokeStyle(Graphics.SOLID);
+                    g.setGrayScale(0);
+                    if (row == 1 || row == 3) {
+                        g.fillArc(boxX, boxY, boxWidth, boxHeight, startAngle, arcAngle);
+                    } else {
+                        g.drawArc(boxX, boxY, boxWidth, boxHeight, startAngle, arcAngle);
+                    }
+                    g.drawString(text, cellX + 1, cellY + cellHeight - label,
+                            Graphics.TOP | Graphics.LEFT);
+                }
+            }
+        }
+    }
 }

@@ -87,13 +87,16 @@ def emit_class(element, known, is_interface, out_dir):
     super_name = element.get("extends")
     if super_name:
         header += " extends %s" % super_name
-    implements = []
+    implemented = []
     for child in element:
         if child.tag == "implements":
             for iface in child:
-                implements.append(iface.get("name"))
-    if implements:
-        header += " implements %s" % ", ".join(implements)
+                implemented.append(iface.get("name"))
+    if implemented:
+        if is_interface:
+            header += " extends %s" % ", ".join(implemented)
+        else:
+            header += " implements %s" % ", ".join(implemented)
     lines.append(header.strip() + " {")
     fields = [c for c in element if c.tag == "field"]
     ctors = [c for c in element if c.tag == "constructor"]
@@ -104,6 +107,10 @@ def emit_class(element, known, is_interface, out_dir):
                                              field.get("name"),
                                              constant_value(type_name,
                                                             field.get("constant-value"))))
+    if not is_interface and not any(len(c.findall("parameter")) == 0 for c in ctors):
+        # a generated constructor has an empty body, so a subclass in the same
+        # package needs a zero argument constructor to call
+        lines.append("    /* package */ %s() { }" % simple)
     for ctor in ctors:
         mods = ctor.get("modifiers", "public")
         if is_interface:
