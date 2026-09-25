@@ -44,6 +44,9 @@ public class CanvasDemos {
         private Texture2D trunkTexture;
         private Image2D foliageImage2D;
         private Texture2D foliageTexture;
+        private Image2D flowerImage2D;
+        private Texture2D flowerTexture;
+        private Image2D sunImage2D;
 
         // Ground
         private Mesh groundHillyMesh;
