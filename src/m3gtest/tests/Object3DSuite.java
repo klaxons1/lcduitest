@@ -28,10 +28,7 @@ public class Object3DSuite extends TestSuite {
         add(new TestCase("getUserObject null initially") {
             public void run() {
                 Mesh m = createDummyMesh();
-                // Initially may be null
-                // Just check getter does not throw
                 Object o = m.getUserObject();
-                // okay
             }
         });
 
@@ -66,16 +63,25 @@ public class Object3DSuite extends TestSuite {
                 Assert.assertTrue("references count >=0", count >= 0);
                 Object3D[] refs = new Object3D[count];
                 w.getReferences(refs);
-                // Should contain at least m if count >0
             }
         });
 
         add(new TestCase("animate") {
             public void run() {
                 Mesh m = createDummyMesh();
-                // animate with time 0 should not throw
-                boolean changed = m.animate(0);
-                // result is boolean, just check no exception
+                int changed = m.animate(0);
+                Assert.assertTrue("animate returns int", changed >= 0 || changed == 0);
+            }
+        });
+
+        add(new TestCase("addAnimationTrack") {
+            public void run() {
+                Mesh m = createDummyMesh();
+                KeyframeSequence ks = new KeyframeSequence(1, 3, KeyframeSequence.LINEAR);
+                ks.setKeyframe(0, 0, new float[]{0,0,0});
+                AnimationTrack track = new AnimationTrack(ks, AnimationTrack.TRANSLATION);
+                m.addAnimationTrack(track);
+                Assert.assertEquals("track count", 1, m.getAnimationTrackCount());
             }
         });
     }

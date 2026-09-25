@@ -25,14 +25,15 @@ public class MeshSuite extends TestSuite {
         add(new TestCase("getIndexBuffer") {
             public void run() {
                 Mesh m = createMesh();
-                Assert.assertNotNull("ib", m.getIndexBuffer());
+                Assert.assertNotNull("ib", m.getIndexBuffer(0));
+                Assert.assertEquals("submesh count", 1, m.getSubmeshCount());
             }
         });
 
         add(new TestCase("getAppearance") {
             public void run() {
                 Mesh m = createMesh();
-                Assert.assertNotNull("ap", m.getAppearance());
+                Assert.assertNotNull("ap", m.getAppearance(0));
             }
         });
 
@@ -40,8 +41,15 @@ public class MeshSuite extends TestSuite {
             public void run() {
                 Mesh m = createMesh();
                 Appearance ap = new Appearance();
-                m.setAppearance(ap);
-                Assert.assertSame("ap", ap, m.getAppearance());
+                m.setAppearance(0, ap);
+                Assert.assertSame("ap", ap, m.getAppearance(0));
+            }
+        });
+
+        add(new TestCase("getSubmeshCount") {
+            public void run() {
+                Mesh m = createMesh();
+                Assert.assertEquals("count 1", 1, m.getSubmeshCount());
             }
         });
     }

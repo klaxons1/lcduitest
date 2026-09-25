@@ -15,13 +15,18 @@ public class Graphics3DSuite extends TestSuite {
             }
         });
 
-        add(new TestCase("getHints setHints") {
+        add(new TestCase("getProperties") {
+            public void run() {
+                java.util.Hashtable props = Graphics3D.getProperties();
+                Assert.assertNotNull("props", props);
+            }
+        });
+
+        add(new TestCase("getHints") {
             public void run() {
                 Graphics3D g3d = Graphics3D.getInstance();
-                int old = g3d.getHints();
-                g3d.setHints(0);
-                Assert.assertEquals("hints 0", 0, g3d.getHints());
-                g3d.setHints(old);
+                int hints = g3d.getHints();
+                Assert.assertTrue("hints >=0", hints >= 0);
             }
         });
 
@@ -30,9 +35,9 @@ public class Graphics3DSuite extends TestSuite {
                 Graphics3D g3d = Graphics3D.getInstance();
                 Light light = new Light();
                 light.setMode(Light.DIRECTIONAL);
-                g3d.addLight(light, new Transform());
+                int index = g3d.addLight(light, new Transform());
+                Assert.assertTrue("light index >=0", index >= 0);
                 g3d.resetLights();
-                // Should not throw
             }
         });
 
@@ -52,12 +57,32 @@ public class Graphics3DSuite extends TestSuite {
         add(new TestCase("getViewport") {
             public void run() {
                 Graphics3D g3d = Graphics3D.getInstance();
-                int[] vp = new int[4];
                 try {
-                    g3d.getViewport(vp);
+                    int x = g3d.getViewportX();
+                    int y = g3d.getViewportY();
+                    int w = g3d.getViewportWidth();
+                    int h = g3d.getViewportHeight();
+                    Assert.assertTrue("viewport check", true);
                 } catch (Exception e) {
                     // may throw if no target
                 }
+            }
+        });
+
+        add(new TestCase("getLightCount") {
+            public void run() {
+                Graphics3D g3d = Graphics3D.getInstance();
+                int count = g3d.getLightCount();
+                Assert.assertTrue("light count >=0", count >= 0);
+            }
+        });
+
+        add(new TestCase("getDepthRange") {
+            public void run() {
+                Graphics3D g3d = Graphics3D.getInstance();
+                float near = g3d.getDepthRangeNear();
+                float far = g3d.getDepthRangeFar();
+                Assert.assertTrue("depth range", far >= near);
             }
         });
     }

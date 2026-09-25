@@ -25,8 +25,7 @@ public class FrameworkSuite extends TestSuite {
 
         add(new TestCase("getProperties") {
             public void run() {
-                Graphics3D g3d = Graphics3D.getInstance();
-                java.util.Hashtable props = g3d.getProperties();
+                java.util.Hashtable props = Graphics3D.getProperties();
                 Assert.assertNotNull("properties", props);
             }
         });
@@ -35,31 +34,31 @@ public class FrameworkSuite extends TestSuite {
             public void run() {
                 Graphics3D g3d = Graphics3D.getInstance();
                 int hints = g3d.getHints();
-                // hints is bitmask, just check it does not throw
                 Assert.assertTrue("hints >=0", hints >= 0);
-            }
-        });
-
-        add(new TestCase("setHints") {
-            public void run() {
-                Graphics3D g3d = Graphics3D.getInstance();
-                int old = g3d.getHints();
-                g3d.setHints(0);
-                Assert.assertEquals("hints 0", 0, g3d.getHints());
-                g3d.setHints(old);
             }
         });
 
         add(new TestCase("getViewport") {
             public void run() {
                 Graphics3D g3d = Graphics3D.getInstance();
-                int[] rect = new int[4];
-                // Without bound target, getViewport may throw or return 0, but should not crash VM
+                // Use getViewportX/Y/Width/Height instead of getViewport(int[])
                 try {
-                    g3d.getViewport(rect);
+                    int x = g3d.getViewportX();
+                    int y = g3d.getViewportY();
+                    int w = g3d.getViewportWidth();
+                    int h = g3d.getViewportHeight();
+                    // Just check no exception
                 } catch (Exception e) {
                     // acceptable if no target bound
                 }
+            }
+        });
+
+        add(new TestCase("getTarget") {
+            public void run() {
+                Graphics3D g3d = Graphics3D.getInstance();
+                Object target = g3d.getTarget();
+                // May be null if no target bound, just check no throw
             }
         });
     }

@@ -19,10 +19,10 @@ public class MaterialSuite extends TestSuite {
         add(new TestCase("setVertexColorTracking") {
             public void run() {
                 Material m = new Material();
-                m.setVertexColorTracking(true);
-                Assert.assertTrue("tracking", m.isVertexColorTracking());
-                m.setVertexColorTracking(false);
-                Assert.assertFalse("no tracking", m.isVertexColorTracking());
+                m.setVertexColorTrackingEnable(true);
+                Assert.assertTrue("tracking", m.isVertexColorTrackingEnabled());
+                m.setVertexColorTrackingEnable(false);
+                Assert.assertFalse("no tracking", m.isVertexColorTrackingEnabled());
             }
         });
 
@@ -31,6 +31,16 @@ public class MaterialSuite extends TestSuite {
                 Material m = new Material();
                 m.setShininess(10.0f);
                 Assert.assertEquals("shininess", 10.0f, m.getShininess(), 0.001f);
+            }
+        });
+
+        add(new TestCase("all color targets") {
+            public void run() {
+                Material m = new Material();
+                m.setColor(Material.AMBIENT, 0x112233);
+                m.setColor(Material.EMISSIVE, 0x445566);
+                m.setColor(Material.SPECULAR, 0x778899);
+                Assert.assertEquals("ambient", 0x112233, m.getColor(Material.AMBIENT));
             }
         });
     }
