@@ -471,10 +471,20 @@ public class CanvasDemos {
                 worldGroup.addChild(bf);
             }
 
-            // Sun sprite
-            Image2D sunImg2D = new Image2D(Image2D.RGBA, Image.createImage(32,32));
+            // Sun sprite - fixed
+            Image sunLCUI = Image.createImage(32,32);
+            Graphics sunG = sunLCUI.getGraphics();
+            sunG.setColor(0xFFFF00);
+            sunG.fillArc(0,0,32,32,0,360);
+            sunG.setColor(0xFFFFFF);
+            sunG.fillArc(8,8,16,16,0,360);
+            sunG.setColor(0xFFD700);
+            sunG.fillArc(10,10,12,12,0,360);
+            sunImage2D = new Image2D(Image2D.RGBA, sunLCUI);
+            Texture2D sunTex = new Texture2D(sunImage2D);
+            sunTex.setFiltering(Texture2D.FILTER_LINEAR, Texture2D.FILTER_LINEAR);
             Appearance sunApp = new Appearance();
-            sunApp.setTexture(0, new Texture2D(sunImage2D));
+            sunApp.setTexture(0, sunTex);
             CompositingMode sunCM = new CompositingMode();
             sunCM.setBlending(CompositingMode.ALPHA);
             sunApp.setCompositingMode(sunCM);
