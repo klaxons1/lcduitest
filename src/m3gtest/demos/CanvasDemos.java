@@ -1,7 +1,6 @@
 package m3gtest.demos;
 
 import javax.microedition.lcdui.Canvas;
-import javax.microedition.lcdui.Font;
 import javax.microedition.lcdui.Graphics;
 import javax.microedition.lcdui.Image;
 
@@ -15,22 +14,15 @@ public class CanvasDemos {
     private CanvasDemos() {}
 
     /**
-     * Beautiful cat on grass with fixed tail, fixed texture mapping and calm MIDI.
-     * Fixes:
-     * - Tail now properly attached inside cat (two segments, pivot at back of body -0.65,0.55,0)
-     * - Texture mapping horror fixed: body uses uniform fur texture (no face), head uses fur + separate face decal plane with eyes
-     * - Added calm MIDI eon.mid (60 BPM warm pad) playing via Manager
+     * Fixed beautiful meadow with hills, river, far river, normal trees, light ground, no text, fixed cat mapping
      */
     public static class CatGrassDemo extends Canvas {
 
         private Thread animator;
         private boolean running;
         private int frame = 0;
-        private String status = "init";
-        private String verifyLog = "";
-        private String midiStatus = "midi: init";
 
-        // M3G core
+        // M3G
         private Graphics3D g3d;
         private Camera camera;
         private Transform camTransform = new Transform();
@@ -44,35 +36,33 @@ public class CanvasDemos {
         private Image2D skyImage2D;
         private Image2D grassImage2D;
         private Texture2D grassTexture;
-        private Image2D furImage2D; // uniform fur without face - for body
-        private Texture2D furTexture;
-        private Image2D faceImage2D; // cute face for decal
+        private Image2D waterImage2D;
+        private Texture2D waterTexture;
+        private Image2D faceImage2D;
         private Texture2D faceTexture;
-        private Image2D catWhiteImage2D;
-        private Texture2D catWhiteTexture;
         private Image2D trunkImage2D;
         private Texture2D trunkTexture;
         private Image2D foliageImage2D;
         private Texture2D foliageTexture;
-        private Image2D flowerImage2D;
-        private Texture2D flowerTexture;
-        private Image2D sunImage2D;
 
         // Ground
-        private Mesh groundMesh;
+        private Mesh groundHillyMesh;
         private Mesh farGroundMesh;
+        private Mesh riverMesh;
+        private Mesh farRiverMesh;
         private Appearance groundAppearance;
         private Appearance farGroundAppearance;
-        private Appearance pathAppearance;
+        private Appearance waterAppearance;
+        private Appearance farWaterAppearance;
 
-        // Environment
+        // World
         private Group worldGroup;
-        private Group[] trees = new Group[12];
-        private Group[] flowers = new Group[20];
+        private Group[] trees = new Group[16];
+        private Group[] flowers = new Group[24];
         private Group[] butterflies = new Group[3];
         private Sprite3D sunSprite;
 
-        // Cat
+        // Cat - fixed mapping with solid colors, no horror texture
         private Group catRoot;
         private Group catBodyGroup;
         private Mesh bodyMesh;
@@ -88,27 +78,22 @@ public class CanvasDemos {
         private Group tailTipGroup;
         private Group headGroup;
         private Mesh shadowMesh;
-        private Appearance furAppearance;
-        private Appearance faceDecalAppearance;
+        private Appearance catBodyAppearance; // solid orange, no texture - fixes mapping horror
         private Appearance catWhiteAppearance;
         private Appearance catPinkAppearance;
+        private Appearance faceDecalAppearance;
         private Appearance shadowAppearance;
 
-        // Animation
         private float catX = 0, catZ = 0, catDirRad = 0;
         private float runCycle = 0;
 
-        // MIDI player - direct MMAPI, no reflection (CLDC has no java.lang.reflect)
         private Player midiPlayer;
-        private boolean midiStarted = false;
 
         public CatGrassDemo() {
-            setTitle("Cat on grass - fixed");
+            setTitle("Cat meadow");
             try {
                 verifyAndCreateAllAssets();
-                status = "assets OK - " + verifyLog;
             } catch (Throwable t) {
-                status = "asset fail: " + t + " - " + verifyLog;
                 t.printStackTrace();
             }
             tryStartMidi();
@@ -118,88 +103,87 @@ public class CanvasDemos {
             try {
                 InputStream is = null;
                 try { is = getClass().getResourceAsStream("/eon.mid"); } catch (Throwable t) {}
-                if (is == null) {
-                    try { is = getClass().getResourceAsStream("/res/eon.mid"); } catch (Throwable t) {}
-                }
-                if (is == null) {
-                    try { is = getClass().getResourceAsStream("eon.mid"); } catch (Throwable t) {}
-                }
+                if (is == null) try { is = getClass().getResourceAsStream("/res/eon.mid"); } catch (Throwable t) {}
                 if (is != null) {
                     Player p = Manager.createPlayer(is, "audio/midi");
                     p.setLoopCount(-1);
-                    // try set volume if available
                     try {
                         javax.microedition.media.control.VolumeControl vc = (javax.microedition.media.control.VolumeControl) p.getControl("VolumeControl");
-                        if (vc != null) vc.setLevel(80);
+                        if (vc != null) vc.setLevel(75);
                     } catch (Throwable ignore) {}
                     p.start();
                     midiPlayer = p;
-                    midiStatus = "midi: playing eon.mid calm 60 BPM";
-                } else {
-                    midiStatus = "midi: eon.mid not found (put in jar root)";
                 }
-            } catch (Throwable t) {
-                midiStatus = "midi: not supported - " + t.toString();
-            }
+            } catch (Throwable t) {}
         }
 
         private void verifyAndCreateAllAssets() throws Exception {
-            StringBuffer log = new StringBuffer();
             g3d = Graphics3D.getInstance();
-            if (g3d == null) throw new RuntimeException("G3D null");
-            log.append("G3D OK;");
 
-            // --- SKY 128x128 ---
-            Image skyLCUI = Image.createImage(128, 128);
+            // --- SKY fixed 256x128 beautiful gradient ---
+            Image skyLCUI = Image.createImage(256, 128);
             Graphics sg = skyLCUI.getGraphics();
             for (int y = 0; y < 128; y++) {
                 int r,g,b;
-                if (y < 80) {
-                    float f = y / 80.0f;
-                    r = (int)(30 + (135-30)*f);
-                    g = (int)(144 + (206-144)*f);
-                    b = (int)(255 + (235-255)*f);
+                if (y < 50) {
+                    // top deep blue to mid blue
+                    float f = y / 50.0f;
+                    r = (int)(20 + (70-20)*f);
+                    g = (int)(40 + (130-40)*f);
+                    b = (int)(120 + (220-120)*f);
+                } else if (y < 90) {
+                    float f = (y-50)/40.0f;
+                    r = (int)(70 + (135-70)*f);
+                    g = (int)(130 + (206-130)*f);
+                    b = (int)(220 + (235-220)*f);
                 } else {
-                    float f = (y-80)/48.0f;
+                    float f = (y-90)/38.0f;
                     r = (int)(135 + (255-135)*f);
-                    g = (int)(206 + (228-206)*f);
-                    b = (int)(235 + (181-235)*f);
+                    g = (int)(206 + (235-206)*f);
+                    b = (int)(235 + (210-235)*f);
                 }
                 sg.setColor((r<<16)|(g<<8)|b);
-                sg.drawLine(0, y, 127, y);
+                sg.drawLine(0, y, 255, y);
             }
+            // soft clouds
             sg.setColor(0xFFFFFF);
-            for (int i = 0; i < 15; i++) {
-                int cx = (i*37+13)%110;
-                int cy = (i*23+7)%60;
-                int w = 12 + (i*7)%18;
-                int h = 6 + (i*5)%8;
+            for (int i = 0; i < 22; i++) {
+                int cx = (i*41+7)%230;
+                int cy = (i*29+11)%70;
+                int w = 18 + (i*11)%28;
+                int h = 8 + (i*7)%10;
                 sg.fillArc(cx, cy, w, h, 0, 360);
-                sg.fillArc(cx+4, cy-2, w-4, h, 0, 360);
+                sg.fillArc(cx+6, cy-3, w-6, h, 0, 360);
+                sg.fillArc(cx-4, cy+2, w-8, h, 0, 360);
             }
+            // sun glow near top
+            sg.setColor(0xFFFFAA);
+            sg.fillArc(180, 8, 28, 28, 0, 360);
+            sg.setColor(0xFFFFFF);
+            sg.fillArc(186, 14, 16, 16, 0, 360);
             skyImage2D = new Image2D(Image2D.RGB, skyLCUI);
-            log.append("sky OK;");
 
-            // --- GRASS 64x64 ---
+            // --- GRASS light, not dark ---
             Image grassLCUI = Image.createImage(64, 64);
             Graphics gg = grassLCUI.getGraphics();
-            gg.setColor(0x2E8B57);
+            gg.setColor(0x7CFC00); // lawn green light, was dark 2E8B57
             gg.fillRect(0,0,64,64);
-            for (int i = 0; i < 300; i++) {
+            // lighter blades
+            for (int i = 0; i < 200; i++) {
                 int x = (i*13+7)%64;
                 int y = (i*29+11)%64;
-                int shade = 0x228B22 + (i%3)*0x10100;
-                gg.setColor(shade);
-                gg.drawLine(x, y, x, Math.min(63, y+2+(i%4)));
-                if (i%3==0) gg.drawLine(x+1, y, x+1, Math.min(63, y+1));
+                gg.setColor(0x90EE90);
+                gg.drawLine(x, y, x, Math.min(63, y+2));
             }
-            for (int i = 0; i < 150; i++) {
+            // darker variation subtle
+            for (int i = 0; i < 100; i++) {
                 int x = (i*7+3)%64;
                 int y = (i*17+5)%64;
-                gg.setColor(0x7CFC00);
+                gg.setColor(0x6B8E23);
                 gg.fillRect(x, y, 1, 1);
             }
-            for (int i = 0; i < 25; i++) {
+            // tiny flowers
+            for (int i = 0; i < 18; i++) {
                 int x = (i*31+13)%60;
                 int y = (i*19+7)%60;
                 int col = (i%3==0)?0xFFFF00:(i%3==1)?0xFF69B4:0xFFFFFF;
@@ -211,44 +195,39 @@ public class CanvasDemos {
             grassTexture.setFiltering(Texture2D.FILTER_LINEAR, Texture2D.FILTER_LINEAR);
             grassTexture.setWrapping(Texture2D.WRAP_REPEAT, Texture2D.WRAP_REPEAT);
             grassTexture.setBlending(Texture2D.FUNC_MODULATE);
-            log.append("grass OK;");
 
-            // --- FUR uniform 32x32 (no face, only stripes) - fixes horror mapping ---
-            Image furLCUI = Image.createImage(32, 32);
-            Graphics fg = furLCUI.getGraphics();
-            fg.setColor(0xFFA54F);
-            fg.fillRect(0,0,32,32);
-            fg.setColor(0x8B4513);
-            for (int y = 0; y < 32; y+=8) {
-                fg.fillRect(0, y, 32, 2);
+            // --- WATER texture 64x64 blue with waves ---
+            Image waterLCUI = Image.createImage(64, 64);
+            Graphics wg = waterLCUI.getGraphics();
+            wg.setColor(0x1E90FF);
+            wg.fillRect(0,0,64,64);
+            wg.setColor(0x87CEEB);
+            for (int y=0;y<64;y+=4) {
+                for (int x=0;x<64;x+=8) {
+                    int off = (int)(Math.sin((x+y+frame*0.1f)*0.2f)*2);
+                    wg.drawLine(x, y+off, x+4, y+off);
+                }
             }
-            fg.setColor(0xCD853F);
-            for (int y = 4; y < 32; y+=8) {
-                fg.fillRect(0, y, 32, 1);
+            wg.setColor(0xFFFFFF);
+            for (int i=0;i<30;i++) {
+                int x=(i*17)%64; int y=(i*23)%64;
+                wg.fillRect(x,y,2,1);
             }
-            // subtle fur noise
-            fg.setColor(0xFF8C00);
-            for (int i=0;i<40;i++) {
-                int x=(i*13)%32; int y=(i*7)%32;
-                fg.drawLine(x,y,x,y);
-            }
-            furImage2D = new Image2D(Image2D.RGB, furLCUI);
-            furTexture = new Texture2D(furImage2D);
-            furTexture.setFiltering(Texture2D.FILTER_LINEAR, Texture2D.FILTER_LINEAR);
-            furTexture.setWrapping(Texture2D.WRAP_REPEAT, Texture2D.WRAP_REPEAT);
-            furTexture.setBlending(Texture2D.FUNC_MODULATE);
-            log.append("fur uniform OK;");
+            waterImage2D = new Image2D(Image2D.RGB, waterLCUI);
+            waterTexture = new Texture2D(waterImage2D);
+            waterTexture.setFiltering(Texture2D.FILTER_LINEAR, Texture2D.FILTER_LINEAR);
+            waterTexture.setWrapping(Texture2D.WRAP_REPEAT, Texture2D.WRAP_REPEAT);
+            waterTexture.setBlending(Texture2D.FUNC_MODULATE);
 
-            // --- FACE decal 32x32 cute face only ---
+            // --- FACE decal 32x32 ---
             Image faceLCUI = Image.createImage(32, 32);
             Graphics fcg = faceLCUI.getGraphics();
             fcg.setColor(0xFFFFFF);
             fcg.fillRect(0,0,32,32);
-            // big eyes
             fcg.setColor(0x000000);
             fcg.fillArc(2, 2, 12, 12, 0, 360);
             fcg.fillArc(18, 2, 12, 12, 0, 360);
-            fcg.setColor(0x00FF66);
+            fcg.setColor(0x33CC33);
             fcg.fillArc(4, 4, 8, 8, 0, 360);
             fcg.fillArc(20, 4, 8, 8, 0, 360);
             fcg.setColor(0x000000);
@@ -257,16 +236,9 @@ public class CanvasDemos {
             fcg.setColor(0xFFFFFF);
             fcg.fillArc(7, 7, 2, 2, 0, 360);
             fcg.fillArc(23, 7, 2, 2, 0, 360);
-            // nose
             fcg.setColor(0xFF69B4);
             fcg.fillRect(13, 16, 6, 3);
-            fcg.fillRect(14, 19, 4, 2);
-            // mouth
             fcg.setColor(0x000000);
-            fcg.drawLine(12, 21, 15, 22);
-            fcg.drawLine(20, 22, 17, 21);
-            fcg.drawLine(15, 22, 17, 24);
-            // whiskers
             fcg.drawLine(0, 14, 8, 14);
             fcg.drawLine(0, 18, 8, 17);
             fcg.drawLine(24, 14, 32, 14);
@@ -274,20 +246,6 @@ public class CanvasDemos {
             faceImage2D = new Image2D(Image2D.RGB, faceLCUI);
             faceTexture = new Texture2D(faceImage2D);
             faceTexture.setFiltering(Texture2D.FILTER_LINEAR, Texture2D.FILTER_LINEAR);
-            faceTexture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
-            faceTexture.setBlending(Texture2D.FUNC_MODULATE);
-            log.append("face decal OK;");
-
-            // white paws 16x16
-            Image whiteLCUI = Image.createImage(16,16);
-            Graphics wg = whiteLCUI.getGraphics();
-            wg.setColor(0xFFFFFF);
-            wg.fillRect(0,0,16,16);
-            wg.setColor(0xFFDAB9);
-            wg.fillRect(0,12,16,4);
-            catWhiteImage2D = new Image2D(Image2D.RGB, whiteLCUI);
-            catWhiteTexture = new Texture2D(catWhiteImage2D);
-            catWhiteTexture.setFiltering(Texture2D.FILTER_LINEAR, Texture2D.FILTER_LINEAR);
 
             // trunk bark 16x16
             Image trunkLCUI = Image.createImage(16,16);
@@ -312,35 +270,12 @@ public class CanvasDemos {
             foliageImage2D = new Image2D(Image2D.RGB, folLCUI);
             foliageTexture = new Texture2D(foliageImage2D);
 
-            // flower 8x8
-            Image flowerLCUI = Image.createImage(8,8);
-            Graphics flowerG = flowerLCUI.getGraphics();
-            flowerG.setColor(0xFF00FF);
-            flowerG.fillArc(0,0,8,8,0,360);
-            flowerG.setColor(0xFFFF00);
-            flowerG.fillArc(2,2,4,4,0,360);
-            flowerImage2D = new Image2D(Image2D.RGB, flowerLCUI);
-            flowerTexture = new Texture2D(flowerImage2D);
-
-            // sun 32x32
-            Image sunLCUI = Image.createImage(32,32);
-            Graphics sunG = sunLCUI.getGraphics();
-            sunG.setColor(0xFFFF00);
-            sunG.fillArc(0,0,32,32,0,360);
-            sunG.setColor(0xFFFFFF);
-            sunG.fillArc(8,8,16,16,0,360);
-            sunG.setColor(0xFFD700);
-            sunG.fillArc(10,10,12,12,0,360);
-            sunImage2D = new Image2D(Image2D.RGBA, sunLCUI);
-
-            log.append("other tex OK;");
-
-            // --- Appearances ---
+            // --- Appearances - LIGHT GROUND ---
             groundAppearance = new Appearance();
             groundAppearance.setTexture(0, grassTexture);
             Material gm = new Material();
-            gm.setColor(Material.DIFFUSE, 0xFFFFFF);
-            gm.setColor(Material.AMBIENT, 0x999999);
+            gm.setColor(Material.DIFFUSE, 0xFFFFFF); // light, was dark
+            gm.setColor(Material.AMBIENT, 0xCCCCCC);
             groundAppearance.setMaterial(gm);
             PolygonMode gpm = new PolygonMode();
             gpm.setShading(PolygonMode.SHADE_SMOOTH);
@@ -350,27 +285,42 @@ public class CanvasDemos {
             farGroundAppearance = new Appearance();
             farGroundAppearance.setTexture(0, grassTexture);
             Material fgm = new Material();
-            fgm.setColor(Material.DIFFUSE, 0x88AA88);
+            fgm.setColor(Material.DIFFUSE, 0xFFFFFF);
+            fgm.setColor(Material.AMBIENT, 0xBBBBBB);
             farGroundAppearance.setMaterial(fgm);
             farGroundAppearance.setPolygonMode(gpm);
 
-            pathAppearance = new Appearance();
-            pathAppearance.setTexture(0, grassTexture);
-            Material pm = new Material();
-            pm.setColor(Material.DIFFUSE, 0xDEB887);
-            pathAppearance.setMaterial(pm);
-            pathAppearance.setPolygonMode(gpm);
+            waterAppearance = new Appearance();
+            waterAppearance.setTexture(0, waterTexture);
+            Material wm = new Material();
+            wm.setColor(Material.DIFFUSE, 0xFFFFFF);
+            wm.setColor(Material.AMBIENT, 0xAAAAAA);
+            waterAppearance.setMaterial(wm);
+            waterAppearance.setPolygonMode(gpm);
+            CompositingMode wcm = new CompositingMode();
+            wcm.setBlending(CompositingMode.ALPHA);
+            wcm.setAlphaThreshold(0.1f);
+            waterAppearance.setCompositingMode(wcm);
 
-            furAppearance = new Appearance();
-            furAppearance.setTexture(0, furTexture);
-            Material cm = new Material();
-            cm.setColor(Material.DIFFUSE, 0xFFFFFF);
-            cm.setColor(Material.SPECULAR, 0x333333);
-            cm.setShininess(12);
-            furAppearance.setMaterial(cm);
+            farWaterAppearance = new Appearance();
+            farWaterAppearance.setTexture(0, waterTexture);
+            Material fwm = new Material();
+            fwm.setColor(Material.DIFFUSE, 0xAACCEE);
+            farWaterAppearance.setMaterial(fwm);
+            farWaterAppearance.setPolygonMode(gpm);
+            farWaterAppearance.setCompositingMode(wcm);
+
+            // CAT - solid colors, no horror texture mapping
+            catBodyAppearance = new Appearance();
+            Material catMat = new Material();
+            catMat.setColor(Material.DIFFUSE, 0xFFA54F); // orange
+            catMat.setColor(Material.AMBIENT, 0xFFA54F);
+            catMat.setColor(Material.SPECULAR, 0x444444);
+            catMat.setShininess(10);
+            catBodyAppearance.setMaterial(catMat);
             PolygonMode cpm = new PolygonMode();
             cpm.setShading(PolygonMode.SHADE_SMOOTH);
-            furAppearance.setPolygonMode(cpm);
+            catBodyAppearance.setPolygonMode(cpm);
 
             faceDecalAppearance = new Appearance();
             faceDecalAppearance.setTexture(0, faceTexture);
@@ -383,27 +333,27 @@ public class CanvasDemos {
             faceDecalAppearance.setCompositingMode(faceCM);
 
             catWhiteAppearance = new Appearance();
-            catWhiteAppearance.setTexture(0, catWhiteTexture);
-            catWhiteAppearance.setMaterial(cm);
+            Material whiteMat = new Material();
+            whiteMat.setColor(Material.DIFFUSE, 0xFFFFFF);
+            whiteMat.setColor(Material.AMBIENT, 0xFFFFFF);
+            catWhiteAppearance.setMaterial(whiteMat);
             catWhiteAppearance.setPolygonMode(cpm);
 
             catPinkAppearance = new Appearance();
             Material pinkMat = new Material();
             pinkMat.setColor(Material.DIFFUSE, 0xFFB6C1);
+            pinkMat.setColor(Material.AMBIENT, 0xFFB6C1);
             catPinkAppearance.setMaterial(pinkMat);
             catPinkAppearance.setPolygonMode(cpm);
 
             shadowAppearance = new Appearance();
             CompositingMode scm = new CompositingMode();
             scm.setBlending(CompositingMode.ALPHA);
-            scm.setAlphaThreshold(0.05f);
             shadowAppearance.setCompositingMode(scm);
             Material sm = new Material();
             sm.setColor(Material.DIFFUSE, 0x33000000);
             shadowAppearance.setMaterial(sm);
-            PolygonMode spm = new PolygonMode();
-            spm.setShading(PolygonMode.SHADE_FLAT);
-            shadowAppearance.setPolygonMode(spm);
+            shadowAppearance.setPolygonMode(cpm);
 
             Appearance trunkApp = new Appearance();
             trunkApp.setTexture(0, trunkTexture);
@@ -415,81 +365,90 @@ public class CanvasDemos {
             folApp.setMaterial(gm);
             folApp.setPolygonMode(gpm);
 
-            Appearance flowerApp = new Appearance();
-            flowerApp.setTexture(0, flowerTexture);
-            Material flowerMat = new Material();
-            flowerMat.setColor(Material.DIFFUSE, 0xFFFFFF);
-            flowerApp.setMaterial(flowerMat);
-            flowerApp.setPolygonMode(gpm);
-            CompositingMode flowerCM = new CompositingMode();
-            flowerCM.setBlending(CompositingMode.ALPHA);
-            flowerApp.setCompositingMode(flowerCM);
+            // --- HILLY TERRAIN 40x40 with 10x10 segments ---
+            groundHillyMesh = createHillyTerrain(40.0f, 10, 1.8f, groundAppearance);
+            farGroundMesh = createHillyTerrain(80.0f, 8, 2.5f, farGroundAppearance);
+            Transform farT = new Transform();
+            farT.postTranslate(0, -0.3f, 0);
+            farGroundMesh.setTransform(farT);
 
-            log.append("appearances OK;");
+            // --- RIVER winding through meadow ---
+            riverMesh = createRiver(22.0f, 14, 2.2f, 0.0f, waterAppearance);
+            Transform riverT = new Transform();
+            riverT.postTranslate(0, -0.15f, 0);
+            riverMesh.setTransform(riverT);
 
-            // Ground
-            groundMesh = createPlane(40.0f, groundAppearance, 12.0f);
-            farGroundMesh = createPlane(80.0f, farGroundAppearance, 20.0f);
+            // Far river in distance
+            farRiverMesh = createRiver(30.0f, 10, 4.0f, -18.0f, farWaterAppearance);
+            Transform farRiverT = new Transform();
+            farRiverT.postTranslate(0, -0.4f, -12.0f);
+            farRiverMesh.setTransform(farRiverT);
 
             worldGroup = new Group();
-            worldGroup.addChild(groundMesh);
-            Transform farT = new Transform();
-            farT.postTranslate(0, -0.05f, 0);
-            farGroundMesh.setTransform(farT);
+            worldGroup.addChild(groundHillyMesh);
             worldGroup.addChild(farGroundMesh);
+            worldGroup.addChild(riverMesh);
+            worldGroup.addChild(farRiverMesh);
 
-            Group pathGroup = new Group();
-            for (int i = 0; i < 16; i++) {
-                float ang = (i * 360.0f / 16.0f) * 3.14159f / 180.0f;
-                float r = 4.2f;
-                float x = (float)Math.sin(ang)*r;
-                float z = (float)Math.cos(ang)*r;
-                Mesh seg = createPlane(1.2f, pathAppearance, 1.0f);
+            // --- TREES normally placed - not circle, natural clusters ---
+            // Use pseudo-random but avoid river (x near 0)
+            int treeCount = 0;
+            float[][] treePos = {
+                {-8, -6}, {-10, -2}, {-9, 3}, {-7, 8}, {-5, 12},
+                {6, 10}, {9, 6}, {11, 1}, {10, -4}, {8, -8},
+                {-3, -10}, {3, -11}, {-12, 5}, {12, 9}, {-4, 14}, {5, 13}
+            };
+            for (int i = 0; i < treePos.length && treeCount < trees.length; i++) {
+                float x = treePos[i][0];
+                float z = treePos[i][1];
+                // avoid river center: river is around x = sin(z*0.2)*3, width 2.2
+                float riverX = (float)Math.sin(z*0.2f)*3.0f;
+                if (Math.abs(x - riverX) < 2.5f) continue; // skip too close to river
+                // height from hilly terrain approx
+                float y = getTerrainHeight(x, z, 1.8f);
+                Group tree = createTree(trunkApp, folApp, 1.6f + (i%4)*0.5f);
                 Transform tt = new Transform();
-                tt.postTranslate(x, 0.01f, z);
-                tt.postRotate((float)Math.toDegrees(ang), 0,1,0);
-                seg.setTransform(tt);
-                pathGroup.addChild(seg);
-            }
-            worldGroup.addChild(pathGroup);
-
-            for (int i = 0; i < 12; i++) {
-                float ang = (i * 360.0f / 12.0f) * 3.14159f / 180.0f;
-                float r = 12.0f + (i%3);
-                float x = (float)Math.sin(ang)*r;
-                float z = (float)Math.cos(ang)*r;
-                Group tree = createTree(trunkApp, folApp, 1.8f + (i%3)*0.4f);
-                Transform treeT = new Transform();
-                treeT.postTranslate(x, 0, z);
-                tree.setTransform(treeT);
-                trees[i] = tree;
+                tt.postTranslate(x, y, z);
+                tree.setTransform(tt);
+                trees[treeCount++] = tree;
                 worldGroup.addChild(tree);
             }
 
-            for (int i = 0; i < 20; i++) {
+            // Flowers near river and meadow
+            for (int i = 0; i < flowers.length; i++) {
                 float ang = (i*137.5f)*3.14159f/180.0f;
-                float r = 2.0f + (i*0.6f)%8.0f;
+                float r = 2.5f + (i*0.7f)%9.0f;
                 float x = (float)Math.sin(ang)*r;
                 float z = (float)Math.cos(ang)*r;
-                if (Math.abs(x) < 1.5f && Math.abs(z) < 1.5f) continue;
+                if (Math.abs(x) < 1.2f && Math.abs(z) < 1.2f) continue;
+                float riverX = (float)Math.sin(z*0.2f)*3.0f;
+                if (Math.abs(x - riverX) < 1.0f) continue; // not in river
+                float y = getTerrainHeight(x, z, 1.8f);
                 Group flower = new Group();
-                Mesh stem = createBox(0.05f, 0.4f, 0.05f, trunkApp, "stem");
+                Mesh stem = createBox(0.04f, 0.35f, 0.04f, trunkApp, "stem");
                 Transform stemT = new Transform();
-                stemT.postTranslate(0, 0.2f, 0);
+                stemT.postTranslate(0, 0.18f, 0);
                 stem.setTransform(stemT);
                 flower.addChild(stem);
-                Mesh bloom = createBox(0.25f, 0.1f, 0.25f, flowerApp, "bloom");
+                Appearance flowerApp = new Appearance();
+                Material fm = new Material();
+                int col = (i%4==0)?0xFF69B4:(i%4==1)?0xFFFF00:(i%4==2)?0xFF00FF:0xFFFFFF;
+                fm.setColor(Material.DIFFUSE, col);
+                flowerApp.setMaterial(fm);
+                flowerApp.setPolygonMode(gpm);
+                Mesh bloom = createBox(0.22f, 0.08f, 0.22f, flowerApp, "bloom");
                 Transform bloomT = new Transform();
-                bloomT.postTranslate(0, 0.45f, 0);
+                bloomT.postTranslate(0, 0.38f, 0);
                 bloom.setTransform(bloomT);
                 flower.addChild(bloom);
                 Transform fT = new Transform();
-                fT.postTranslate(x, 0, z);
+                fT.postTranslate(x, y, z);
                 flower.setTransform(fT);
                 flowers[i] = flower;
                 worldGroup.addChild(flower);
             }
 
+            // Butterflies
             for (int i = 0; i < 3; i++) {
                 Group bf = new Group();
                 Appearance bfApp = new Appearance();
@@ -498,13 +457,13 @@ public class CanvasDemos {
                 bfm.setColor(Material.DIFFUSE, col);
                 bfApp.setMaterial(bfm);
                 bfApp.setPolygonMode(gpm);
-                Mesh wingL = createBox(0.3f, 0.02f, 0.2f, bfApp, "wing");
-                Mesh wingR = createBox(0.3f, 0.02f, 0.2f, bfApp, "wing");
+                Mesh wingL = createBox(0.28f, 0.02f, 0.18f, bfApp, "wing");
+                Mesh wingR = createBox(0.28f, 0.02f, 0.18f, bfApp, "wing");
                 Transform wLT = new Transform();
-                wLT.postTranslate(-0.18f, 0, 0);
+                wLT.postTranslate(-0.16f, 0, 0);
                 wingL.setTransform(wLT);
                 Transform wRT = new Transform();
-                wRT.postTranslate(0.18f, 0, 0);
+                wRT.postTranslate(0.16f, 0, 0);
                 wingR.setTransform(wRT);
                 bf.addChild(wingL);
                 bf.addChild(wingR);
@@ -512,6 +471,7 @@ public class CanvasDemos {
                 worldGroup.addChild(bf);
             }
 
+            // Sun sprite
             Image2D sunImg2D = new Image2D(Image2D.RGBA, Image.createImage(32,32));
             Appearance sunApp = new Appearance();
             sunApp.setTexture(0, new Texture2D(sunImage2D));
@@ -525,22 +485,17 @@ public class CanvasDemos {
             sunSprite.setTransform(sunT);
             worldGroup.addChild(sunSprite);
 
-            // --- Cat meshes with fixed mapping ---
-            pawMesh = createBox(0.24f, 0.18f, 0.24f, catWhiteAppearance, "paw");
-            bodyMesh = createBox(1.3f, 0.65f, 0.6f, furAppearance, "body");
-            headMesh = createBox(0.65f, 0.6f, 0.65f, furAppearance, "head");
-            earLeftMesh = createBox(0.18f, 0.28f, 0.14f, catPinkAppearance, "earL");
-            earRightMesh = createBox(0.18f, 0.28f, 0.14f, catPinkAppearance, "earR");
-            // Tail fixed: two segments, properly attached
-            tailBaseMesh = createBox(0.18f, 0.18f, 0.6f, furAppearance, "tailBase");
-            tailTipMesh = createBox(0.14f, 0.14f, 0.5f, furAppearance, "tailTip");
-            shadowMesh = createPlane(1.6f, shadowAppearance, 1.0f);
-            // Face decal - small plane in front of head
-            faceDecalMesh = createPlaneWithUV(0.5f, faceDecalAppearance, 0, 0, 1, 1);
+            // --- CAT with fixed mapping solid colors ---
+            pawMesh = createBox(0.22f, 0.16f, 0.22f, catWhiteAppearance, "paw");
+            bodyMesh = createBox(1.25f, 0.6f, 0.55f, catBodyAppearance, "body");
+            headMesh = createBox(0.6f, 0.55f, 0.6f, catBodyAppearance, "head");
+            earLeftMesh = createBox(0.16f, 0.26f, 0.12f, catPinkAppearance, "earL");
+            earRightMesh = createBox(0.16f, 0.26f, 0.12f, catPinkAppearance, "earR");
+            tailBaseMesh = createBox(0.16f, 0.16f, 0.55f, catBodyAppearance, "tailBase");
+            tailTipMesh = createBox(0.12f, 0.12f, 0.45f, catBodyAppearance, "tailTip");
+            shadowMesh = createPlane(1.5f, shadowAppearance, 1.0f);
+            faceDecalMesh = createPlaneWithUV(0.45f, faceDecalAppearance, 0, 0, 1, 1);
 
-            log.append("cat meshes OK;");
-
-            // Cat hierarchy - FIXED TAIL INSIDE CAT
             catRoot = new Group();
             catBodyGroup = new Group();
 
@@ -551,52 +506,48 @@ public class CanvasDemos {
 
             headGroup = new Group();
             Transform headPos = new Transform();
-            headPos.postTranslate(0.85f, 0.65f, 0);
+            headPos.postTranslate(0.82f, 0.62f, 0);
             headGroup.setTransform(headPos);
             headGroup.addChild(headMesh);
-            // face decal slightly in front of head
             Transform faceT = new Transform();
-            faceT.postTranslate(0.33f, 0.05f, 0);
+            faceT.postTranslate(0.31f, 0.05f, 0);
             faceT.postRotate(90, 0,1,0);
             faceDecalMesh.setTransform(faceT);
             headGroup.addChild(faceDecalMesh);
-
             Transform earLPos = new Transform();
-            earLPos.postTranslate(0.12f, 0.38f, 0.18f);
+            earLPos.postTranslate(0.1f, 0.36f, 0.16f);
             earLeftMesh.setTransform(earLPos);
             headGroup.addChild(earLeftMesh);
             Transform earRPos = new Transform();
-            earRPos.postTranslate(0.12f, 0.38f, -0.18f);
+            earRPos.postTranslate(0.1f, 0.36f, -0.16f);
             earRightMesh.setTransform(earRPos);
             headGroup.addChild(earRightMesh);
             catBodyGroup.addChild(headGroup);
 
-            // FIXED TAIL: pivot exactly at back of body, inside cat
             tailGroup = new Group();
             Transform tailPivot = new Transform();
-            tailPivot.postTranslate(-0.65f, 0.55f, 0); // back center of body, was -0.75
+            tailPivot.postTranslate(-0.62f, 0.52f, 0);
             tailGroup.setTransform(tailPivot);
             Transform tailBaseT = new Transform();
-            tailBaseT.postTranslate(-0.3f, 0, 0); // base extends 0.3 back from pivot, now inside
+            tailBaseT.postTranslate(-0.27f, 0, 0);
             tailBaseMesh.setTransform(tailBaseT);
             tailGroup.addChild(tailBaseMesh);
 
             tailTipGroup = new Group();
             Transform tipPivot = new Transform();
-            tipPivot.postTranslate(-0.6f, 0, 0); // tip pivot at end of base
+            tipPivot.postTranslate(-0.55f, 0, 0);
             tailTipGroup.setTransform(tipPivot);
             Transform tipT = new Transform();
-            tipT.postTranslate(-0.25f, 0, 0);
+            tipT.postTranslate(-0.22f, 0, 0);
             tailTipMesh.setTransform(tipT);
             tailTipGroup.addChild(tailTipMesh);
             tailGroup.addChild(tailTipGroup);
-
             catBodyGroup.addChild(tailGroup);
 
-            legFLGroup = createLegWithPaw(0.5f, 0.0f, 0.24f);
-            legFRGroup = createLegWithPaw(0.5f, 0.0f, -0.24f);
-            legBLGroup = createLegWithPaw(-0.5f, 0.0f, 0.24f);
-            legBRGroup = createLegWithPaw(-0.5f, 0.0f, -0.24f);
+            legFLGroup = createLegWithPaw(0.48f, 0.0f, 0.22f);
+            legFRGroup = createLegWithPaw(0.48f, 0.0f, -0.22f);
+            legBLGroup = createLegWithPaw(-0.48f, 0.0f, 0.22f);
+            legBRGroup = createLegWithPaw(-0.48f, 0.0f, -0.22f);
 
             catBodyGroup.addChild(legFLGroup);
             catBodyGroup.addChild(legFRGroup);
@@ -612,25 +563,24 @@ public class CanvasDemos {
             catBodyGroup.addChild(shadowGroup);
 
             catRoot.addChild(catBodyGroup);
-            log.append("cat hierarchy fixed tail inside;");
 
             camera = new Camera();
-            camera.setPerspective(50.0f, 1.33f, 0.3f, 60.0f);
+            camera.setPerspective(52.0f, 1.33f, 0.3f, 70.0f);
 
             sunLight = new Light();
             sunLight.setMode(Light.DIRECTIONAL);
             sunLight.setColor(0xFFE4B5);
-            sunLight.setIntensity(1.3f);
+            sunLight.setIntensity(1.4f);
 
             fillLight = new Light();
             fillLight.setMode(Light.DIRECTIONAL);
             fillLight.setColor(0xADD8E6);
-            fillLight.setIntensity(0.4f);
+            fillLight.setIntensity(0.5f);
 
             ambientLight = new Light();
             ambientLight.setMode(Light.AMBIENT);
-            ambientLight.setColor(0x666666);
-            ambientLight.setIntensity(0.7f);
+            ambientLight.setColor(0x888888);
+            ambientLight.setIntensity(0.8f);
 
             background = new Background();
             background.setColor(0x87CEEB);
@@ -638,35 +588,39 @@ public class CanvasDemos {
             skyBg.setColor(0x87CEEB);
             skyBg.setImage(skyImage2D);
             skyBg.setImageMode(Background.BORDER, Background.BORDER);
-            skyBg.setCrop(0, 0, 128, 64);
+            skyBg.setCrop(0, 0, 256, 90);
             background = skyBg;
 
             fog = new Fog();
             fog.setMode(Fog.LINEAR);
-            fog.setColor(0xC2DFFF);
-            fog.setLinear(14.0f, 38.0f);
+            fog.setColor(0xC8E6FF);
+            fog.setLinear(18.0f, 45.0f);
             groundAppearance.setFog(fog);
             farGroundAppearance.setFog(fog);
-            furAppearance.setFog(fog);
-            trunkApp.setFog(fog);
-            folApp.setFog(fog);
+            waterAppearance.setFog(fog);
+            farWaterAppearance.setFog(fog);
+            catBodyAppearance.setFog(fog);
+            catWhiteAppearance.setFog(fog);
+        }
 
-            verifyLog = log.toString();
+        private float getTerrainHeight(float x, float z, float scale) {
+            // same formula as hilly terrain
+            return (float)(Math.sin(x*0.2f)*Math.cos(z*0.2f)*scale*0.5f + Math.sin(x*0.1f)*Math.cos(z*0.15f)*scale*0.3f);
         }
 
         private Group createTree(Appearance trunkApp, Appearance folApp, float height) throws Exception {
             Group tree = new Group();
             float trunkH = height;
-            Mesh trunk = createBox(0.25f, trunkH, 0.25f, trunkApp, "trunk");
+            Mesh trunk = createBox(0.22f, trunkH, 0.22f, trunkApp, "trunk");
             Transform trunkT = new Transform();
             trunkT.postTranslate(0, trunkH/2.0f, 0);
             trunk.setTransform(trunkT);
             tree.addChild(trunk);
             for (int i = 0; i < 3; i++) {
-                float sz = 1.2f - i*0.2f;
-                Mesh fol = createBox(sz, sz*0.7f, sz, folApp, "fol");
+                float sz = 1.1f - i*0.18f;
+                Mesh fol = createBox(sz, sz*0.65f, sz, folApp, "fol");
                 Transform folT = new Transform();
-                folT.postTranslate(0, trunkH + 0.3f + i*0.5f, 0);
+                folT.postTranslate(0, trunkH + 0.25f + i*0.45f, 0);
                 fol.setTransform(folT);
                 tree.addChild(fol);
             }
@@ -678,22 +632,139 @@ public class CanvasDemos {
             Transform hipT = new Transform();
             hipT.postTranslate(x, y, z);
             hip.setTransform(hipT);
-            Mesh upper = createBox(0.24f, 0.5f, 0.24f, furAppearance, "upperLeg");
+            Mesh upper = createBox(0.22f, 0.45f, 0.22f, catBodyAppearance, "upperLeg");
             Transform upT = new Transform();
-            upT.postTranslate(0, -0.25f, 0);
+            upT.postTranslate(0, -0.22f, 0);
             upper.setTransform(upT);
             hip.addChild(upper);
             Group pawGroup = new Group();
             Transform pawPivot = new Transform();
-            pawPivot.postTranslate(0, -0.5f, 0);
+            pawPivot.postTranslate(0, -0.45f, 0);
             pawGroup.setTransform(pawPivot);
             Mesh paw = (Mesh) pawMesh.duplicate();
             Transform pawT = new Transform();
-            pawT.postTranslate(0, -0.09f, 0);
+            pawT.postTranslate(0, -0.08f, 0);
             paw.setTransform(pawT);
             pawGroup.addChild(paw);
             hip.addChild(pawGroup);
             return hip;
+        }
+
+        private Mesh createHillyTerrain(float size, int segments, float heightScale, Appearance ap) throws Exception {
+            int vertsX = segments + 1;
+            int vertsZ = segments + 1;
+            int vertCount = vertsX * vertsZ;
+            float[] pos = new float[vertCount * 3];
+            byte[] norm = new byte[vertCount * 3];
+            short[] tex = new short[vertCount * 2];
+            int idx = 0;
+            int tIdx = 0;
+            float half = size / 2.0f;
+            float step = size / segments;
+            for (int z = 0; z < vertsZ; z++) {
+                for (int x = 0; x < vertsX; x++) {
+                    float fx = -half + x * step;
+                    float fz = -half + z * step;
+                    float fy = getTerrainHeight(fx, fz, heightScale);
+                    pos[idx++] = fx;
+                    pos[idx++] = fy;
+                    pos[idx++] = fz;
+                    // normal up, will be smoothed
+                    norm[(z*vertsX + x)*3] = 0;
+                    norm[(z*vertsX + x)*3+1] = 127;
+                    norm[(z*vertsX + x)*3+2] = 0;
+                    // tex repeat
+                    float u = (x / (float)segments) * 8.0f;
+                    float v = (z / (float)segments) * 8.0f;
+                    tex[tIdx++] = (short)(u*1000);
+                    tex[tIdx++] = (short)(v*1000);
+                }
+            }
+            VertexArray posArray = new VertexArray(vertCount, 3, 2);
+            short[] ps = new short[vertCount*3];
+            for (int i=0;i<vertCount*3;i++) ps[i]=(short)(pos[i]*1000);
+            posArray.set(0, vertCount, ps);
+            VertexArray normArray = new VertexArray(vertCount, 3, 1);
+            normArray.set(0, vertCount, norm);
+            VertexArray texArray = new VertexArray(vertCount, 2, 2);
+            texArray.set(0, vertCount, tex);
+            VertexBuffer vb = new VertexBuffer();
+            vb.setPositions(posArray, 0.001f, new float[]{0,0,0});
+            vb.setNormals(normArray);
+            vb.setTexCoords(0, texArray, 0.001f, new float[]{0,0,0});
+
+            int quadCount = segments * segments;
+            int[] indices = new int[quadCount * 6];
+            int p = 0;
+            for (int z = 0; z < segments; z++) {
+                for (int x = 0; x < segments; x++) {
+                    int v0 = z * vertsX + x;
+                    int v1 = v0 + 1;
+                    int v2 = v0 + vertsX;
+                    int v3 = v2 + 1;
+                    indices[p++] = v0; indices[p++] = v2; indices[p++] = v1;
+                    indices[p++] = v1; indices[p++] = v2; indices[p++] = v3;
+                }
+            }
+            IndexBuffer ib = new TriangleStripArray(indices, new int[quadCount*2]);
+            for (int i=0;i<quadCount*2;i++) ((TriangleStripArray)ib).getClass(); // dummy to avoid warning
+            // Actually need strip lengths array: each quad 2 triangles = 2 strips of 3? Use 3 per triangle
+            int[] strips = new int[quadCount*2];
+            for (int i=0;i<strips.length;i++) strips[i]=3;
+            ib = new TriangleStripArray(indices, strips);
+            return new Mesh(vb, ib, ap);
+        }
+
+        private Mesh createRiver(float length, int segments, float width, float zOffset, Appearance ap) throws Exception {
+            int verts = (segments+1)*2;
+            float[] pos = new float[verts*3];
+            byte[] norm = new byte[verts*3];
+            short[] tex = new short[verts*2];
+            int pIdx=0, tIdx=0;
+            float segLen = length / segments;
+            float halfLen = length/2.0f;
+            for (int i=0;i<=segments;i++) {
+                float fz = -halfLen + i*segLen + zOffset;
+                float fxCenter = (float)Math.sin(fz*0.2f)*3.0f;
+                float fxLeft = fxCenter - width*0.5f;
+                float fxRight = fxCenter + width*0.5f;
+                float fy = -0.12f; // slightly below ground
+                // left
+                pos[pIdx++] = fxLeft; pos[pIdx++] = fy; pos[pIdx++] = fz;
+                // right
+                pos[pIdx++] = fxRight; pos[pIdx++] = fy; pos[pIdx++] = fz;
+
+                norm[(i*2)*3+1]=127;
+                norm[(i*2+1)*3+1]=127;
+
+                float v = (i/(float)segments)*6.0f;
+                tex[tIdx++] = 0; tex[tIdx++] = (short)(v*1000);
+                tex[tIdx++] = (short)(4*1000); tex[tIdx++] = (short)(v*1000);
+            }
+            VertexArray posA = new VertexArray(verts,3,2);
+            short[] ps = new short[verts*3];
+            for (int i=0;i<verts*3;i++) ps[i]=(short)(pos[i]*1000);
+            posA.set(0, verts, ps);
+            VertexArray normA = new VertexArray(verts,3,1);
+            normA.set(0, verts, norm);
+            VertexArray texA = new VertexArray(verts,2,2);
+            texA.set(0, verts, tex);
+            VertexBuffer vb = new VertexBuffer();
+            vb.setPositions(posA,0.001f,new float[]{0,0,0});
+            vb.setNormals(normA);
+            vb.setTexCoords(0,texA,0.001f,new float[]{0,0,0});
+
+            int[] indices = new int[segments*6];
+            int ip=0;
+            for (int i=0;i<segments;i++) {
+                int v0=i*2, v1=v0+1, v2=v0+2, v3=v0+3;
+                indices[ip++]=v0; indices[ip++]=v2; indices[ip++]=v1;
+                indices[ip++]=v1; indices[ip++]=v2; indices[ip++]=v3;
+            }
+            int[] strips = new int[segments*2];
+            for (int i=0;i<strips.length;i++) strips[i]=3;
+            IndexBuffer ib = new TriangleStripArray(indices, strips);
+            return new Mesh(vb, ib, ap);
         }
 
         private Mesh createBox(float w, float h, float d, Appearance ap, String dbg) throws Exception {
@@ -803,62 +874,61 @@ public class CanvasDemos {
                         while (running) {
                             frame++;
                             runCycle += 0.28f;
-                            float radius = 4.2f;
-                            float ang = frame * 0.018f;
+                            float radius = 4.5f;
+                            float ang = frame * 0.016f;
                             catX = (float)Math.sin(ang) * radius;
                             catZ = (float)Math.cos(ang) * radius;
                             catDirRad = ang;
-                            float swing = (float)Math.sin(runCycle) * 0.65f;
-                            float swing2 = (float)Math.sin(runCycle + 3.14159f) * 0.65f;
+                            float swing = (float)Math.sin(runCycle) * 0.62f;
+                            float swing2 = (float)Math.sin(runCycle + 3.14159f) * 0.62f;
                             try {
                                 Transform tFL = new Transform();
-                                tFL.postTranslate(0.5f, 0.0f, 0.24f);
+                                tFL.postTranslate(0.48f, 0.0f, 0.22f);
                                 tFL.postRotate((float)Math.toDegrees(swing), 0,0,1);
                                 legFLGroup.setTransform(tFL);
                                 Transform tFR = new Transform();
-                                tFR.postTranslate(0.5f, 0.0f, -0.24f);
+                                tFR.postTranslate(0.48f, 0.0f, -0.22f);
                                 tFR.postRotate((float)Math.toDegrees(swing2), 0,0,1);
                                 legFRGroup.setTransform(tFR);
                                 Transform tBL = new Transform();
-                                tBL.postTranslate(-0.5f, 0.0f, 0.24f);
+                                tBL.postTranslate(-0.48f, 0.0f, 0.22f);
                                 tBL.postRotate((float)Math.toDegrees(swing2), 0,0,1);
                                 legBLGroup.setTransform(tBL);
                                 Transform tBR = new Transform();
-                                tBR.postTranslate(-0.5f, 0.0f, -0.24f);
+                                tBR.postTranslate(-0.48f, 0.0f, -0.22f);
                                 tBR.postRotate((float)Math.toDegrees(swing), 0,0,1);
                                 legBRGroup.setTransform(tBR);
 
-                                // Tail wag - two segments
                                 Transform tailT = new Transform();
-                                tailT.postTranslate(-0.65f, 0.55f, 0);
-                                tailT.postRotate((float)Math.sin(runCycle*1.6f)*22, 0,1,0);
-                                tailT.postRotate((float)Math.sin(runCycle*0.7f)*10, 0,0,1);
+                                tailT.postTranslate(-0.62f, 0.52f, 0);
+                                tailT.postRotate((float)Math.sin(runCycle*1.6f)*20, 0,1,0);
+                                tailT.postRotate((float)Math.sin(runCycle*0.7f)*8, 0,0,1);
                                 tailGroup.setTransform(tailT);
 
                                 Transform tipT = new Transform();
-                                tipT.postTranslate(-0.6f, 0, 0);
-                                tipT.postRotate((float)Math.sin(runCycle*1.6f+0.5f)*18, 0,1,0);
+                                tipT.postTranslate(-0.55f, 0, 0);
+                                tipT.postRotate((float)Math.sin(runCycle*1.6f+0.5f)*16, 0,1,0);
                                 tailTipGroup.setTransform(tipT);
 
                                 Transform bodyBob = new Transform();
-                                bodyBob.postTranslate(0, (float)Math.abs(Math.sin(runCycle))*0.09f, 0);
-                                bodyBob.postRotate((float)Math.sin(runCycle)*3, 0,0,1);
+                                bodyBob.postTranslate(0, (float)Math.abs(Math.sin(runCycle))*0.08f, 0);
+                                bodyBob.postRotate((float)Math.sin(runCycle)*2.5f, 0,0,1);
                                 catBodyGroup.setTransform(bodyBob);
 
                                 Transform headLook = new Transform();
-                                headLook.postTranslate(0.85f, 0.65f, 0);
-                                headLook.postRotate((float)Math.sin(frame*0.05f)*8, 0,1,0);
+                                headLook.postTranslate(0.82f, 0.62f, 0);
+                                headLook.postRotate((float)Math.sin(frame*0.04f)*7, 0,1,0);
                                 headGroup.setTransform(headLook);
 
                                 for (int i=0;i<3;i++) {
                                     Group bf = butterflies[i];
-                                    float bAng = frame*0.02f + i*2.0f;
-                                    float bx = (float)Math.sin(bAng)*(3+i) + catX*0.3f;
-                                    float bz = (float)Math.cos(bAng*0.7f)*(3+i) + catZ*0.3f;
-                                    float by = 1.2f + (float)Math.sin(bAng*1.3f)*0.6f + i*0.3f;
+                                    float bAng = frame*0.018f + i*2.1f;
+                                    float bx = (float)Math.sin(bAng)*(3.5f+i) + catX*0.25f;
+                                    float bz = (float)Math.cos(bAng*0.7f)*(3.5f+i) + catZ*0.25f;
+                                    float by = 1.3f + (float)Math.sin(bAng*1.2f)*0.7f + i*0.25f;
                                     Transform bT = new Transform();
                                     bT.postTranslate(bx, by, bz);
-                                    bT.postRotate(frame*5 + i*30, 0,1,0);
+                                    bT.postRotate(frame*4 + i*28, 0,1,0);
                                     bf.setTransform(bT);
                                 }
                             } catch (Throwable ignore) {}
@@ -869,35 +939,21 @@ public class CanvasDemos {
                 });
                 animator.start();
             }
-            // try to start midi again if not started
-            if (!midiStarted) {
-                tryStartMidi();
-                midiStarted = true;
-            }
         }
 
         protected void hideNotify() {
             running = false;
             animator = null;
-            try {
-                if (midiPlayer != null) {
-                    midiPlayer.stop();
-                }
-            } catch (Throwable t) {}
+            try { if (midiPlayer != null) midiPlayer.stop(); } catch (Throwable t) {}
         }
 
         protected void paint(Graphics g) {
             int w = getWidth();
             int h = getHeight();
-            Font small = Font.getFont(Font.FACE_SYSTEM, Font.STYLE_PLAIN, Font.SIZE_SMALL);
-            Font medium = Font.getFont(Font.FACE_SYSTEM, Font.STYLE_BOLD, Font.SIZE_SMALL);
-            g.setFont(small);
 
             if (g3d == null || worldGroup == null || catRoot == null) {
                 g.setColor(0x000000);
                 g.fillRect(0,0,w,h);
-                g.setColor(0xFFFFFF);
-                g.drawString(status, 2, 2, Graphics.TOP|Graphics.LEFT);
                 return;
             }
 
@@ -907,15 +963,15 @@ public class CanvasDemos {
                     g3d.setViewport(0, 0, w, h);
                     g3d.clear(background);
 
-                    float camRadius = 9.5f;
-                    float camAng = frame * 0.008f;
-                    float camX = (float)Math.sin(camAng) * 2.5f;
-                    float camZ = camRadius + (float)Math.cos(camAng) * 1.2f;
-                    float camY = 3.2f + (float)Math.sin(camAng*0.5f)*0.4f;
+                    float camRadius = 10.0f;
+                    float camAng = frame * 0.007f;
+                    float camX = (float)Math.sin(camAng) * 3.0f;
+                    float camZ = camRadius + (float)Math.cos(camAng) * 1.5f;
+                    float camY = 3.6f + (float)Math.sin(camAng*0.5f)*0.5f;
 
-                    float targetX = catX * 0.6f;
-                    float targetZ = catZ * 0.6f;
-                    float targetY = 0.4f;
+                    float targetX = catX * 0.5f;
+                    float targetZ = catZ * 0.5f;
+                    float targetY = 0.35f;
 
                     float dx = targetX - camX;
                     float dy = targetY - camY;
@@ -929,7 +985,7 @@ public class CanvasDemos {
                     camTransform.postRotate(yaw, 0,1,0);
                     camTransform.postRotate(pitch, 1,0,0);
 
-                    camera.setPerspective(50.0f, (float)w/h, 0.3f, 60.0f);
+                    camera.setPerspective(52.0f, (float)w/h, 0.3f, 70.0f);
                     g3d.setCamera(camera, camTransform);
 
                     Transform sunLT = new Transform();
@@ -946,7 +1002,9 @@ public class CanvasDemos {
                     g3d.render(worldGroup, worldT);
 
                     Transform catRootT = new Transform();
-                    catRootT.postTranslate(catX, 0, catZ);
+                    // cat follows terrain height
+                    float terrainY = getTerrainHeight(catX, catZ, 1.8f);
+                    catRootT.postTranslate(catX, terrainY, catZ);
                     catRootT.postRotate((float)Math.toDegrees(catDirRad), 0,1,0);
                     g3d.render(catRoot, catRootT);
 
@@ -955,25 +1013,11 @@ public class CanvasDemos {
                 } finally {
                     g3d.releaseTarget();
                 }
-
-                g.setFont(medium);
-                g.setColor(0xFFFFFF);
-                g.drawString("Cute cat - tail fixed, fur mapping fixed", 4, 3, Graphics.TOP|Graphics.LEFT);
-                g.setFont(small);
-                g.setColor(0xFFFFAA);
-                g.drawString("frame="+frame+" cat "+String.valueOf((int)(catX*10)/10.0f)+","+String.valueOf((int)(catZ*10)/10.0f), 4, 18, Graphics.TOP|Graphics.LEFT);
-                g.setColor(0xAAFFAA);
-                g.drawString(midiStatus, 4, 30, Graphics.TOP|Graphics.LEFT);
-                g.setColor(0xFFFFFF);
-                g.drawString(status, 4, h-14, Graphics.TOP|Graphics.LEFT);
+                // No text overlay - user requested remove
 
             } catch (Throwable t) {
                 g.setColor(0x000000);
                 g.fillRect(0,0,w,h);
-                g.setColor(0xFF5555);
-                g.drawString("M3G error: "+t, 2, 2, Graphics.TOP|Graphics.LEFT);
-                g.drawString(t.toString(), 2, 14, Graphics.TOP|Graphics.LEFT);
-                status = "render fail: "+t;
             }
         }
 
