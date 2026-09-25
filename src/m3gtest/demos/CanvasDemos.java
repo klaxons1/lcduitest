@@ -719,12 +719,9 @@ public class CanvasDemos {
                     indices[p++] = v1; indices[p++] = v2; indices[p++] = v3;
                 }
             }
-            IndexBuffer ib = new TriangleStripArray(indices, new int[quadCount*2]);
-            for (int i=0;i<quadCount*2;i++) ((TriangleStripArray)ib).getClass(); // dummy to avoid warning
-            // Actually need strip lengths array: each quad 2 triangles = 2 strips of 3? Use 3 per triangle
             int[] strips = new int[quadCount*2];
             for (int i=0;i<strips.length;i++) strips[i]=3;
-            ib = new TriangleStripArray(indices, strips);
+            IndexBuffer ib = new TriangleStripArray(indices, strips);
             return new Mesh(vb, ib, ap);
         }
 
