@@ -212,7 +212,7 @@ public class CanvasDemos {
             groundMesh = createPlane(20.0f, groundAppearance, 5.0f); // 5x repeat
             if (groundMesh == null) throw new RuntimeException("groundMesh null");
             if (groundMesh.getVertexBuffer() == null) throw new RuntimeException("ground VB null");
-            if (groundMesh.getIndexBuffer() == null) throw new RuntimeException("ground IB null");
+            if (groundMesh.getIndexBuffer(0) == null) throw new RuntimeException("ground IB null");
             log.append("ground mesh OK;");
 
             // --- Step 6: Cat body parts (boxes) ---
