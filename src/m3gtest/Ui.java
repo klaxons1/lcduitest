@@ -1,19 +1,26 @@
-/*
- * M3G Tester
+/**
+ * M3GTester - MIDP 2.0 M3G conformance test MIDlet.
+ *
+ * Helpers that let a test case talk to the Display. MIDlet suites run on a
+ * background thread (the MIDP event thread must stay free so that callSerially
+ * runnables, repaints and show/hide notifications can be delivered), so these
+ * helpers are the only place where tests wait for the UI.
+ *
+ * They deliberately use nothing but MIDP 2.0: Display.setCurrent from any
+ * thread, Display.callSerially to get back onto the event thread and
+ * Object.wait/notify plus Thread.sleep (CLDC 1.1) for synchronisation.
  */
 package m3gtest;
 
-import javax.microedition.lcdui.Canvas;
-import javax.microedition.lcdui.Display;
-import javax.microedition.lcdui.Displayable;
-import javax.microedition.lcdui.Graphics;
-import javax.microedition.lcdui.Image;
+import javax.microedition.M3G.Canvas;
+import javax.microedition.M3G.Display;
+import javax.microedition.M3G.Displayable;
+import javax.microedition.M3G.Image;
 import javax.microedition.midlet.MIDlet;
-
-import javax.microedition.m3g.Graphics3D;
 
 public class Ui {
 
+    /** How long a test waits for the event thread before giving up. */
     public static final long SETTLE_MS = 120;
     public static final long TIMEOUT_MS = 5000;
 
@@ -36,6 +43,11 @@ public class Ui {
         return display == null ? Display.getDisplay(midlet) : display;
     }
 
+    /* ------------------------------------------------------------------ */
+    /* synchronisation                                                     */
+    /* ------------------------------------------------------------------ */
+
+    /** Gives the event thread time to process what the test just asked for. */
     public static void settle() {
         sleep(SETTLE_MS);
     }
@@ -48,6 +60,12 @@ public class Ui {
         }
     }
 
+    /**
+     * Runs code on the MIDP event thread (Display.callSerially) and waits for
+     * it to complete. Must not be called from the event thread itself.
+     *
+     * @return true if the runnable was executed before the timeout expired.
+     */
     public static boolean callSeriallyAndWait(Runnable runnable) {
         return callSeriallyAndWait(runnable, TIMEOUT_MS);
     }
@@ -84,6 +102,10 @@ public class Ui {
         }
     }
 
+    /**
+     * Waits until a flag that is set from the event thread becomes true.
+     * Used by tests for asynchronous callbacks (itemStateChanged, ...).
+     */
     public static boolean waitForFlag(final boolean[] flag) {
         return waitForFlag(flag, TIMEOUT_MS);
     }
@@ -99,11 +121,42 @@ public class Ui {
         return true;
     }
 
+    /** Waits for a counter (kept in an int[]) to reach at least value. */
+    public static boolean waitForCount(final int[] counter, int value) {
+        return waitForCount(counter, value, TIMEOUT_MS);
+    }
+
+    public static boolean waitForCount(final int[] counter, int value, long timeout) {
+        long deadline = System.currentTimeMillis() + timeout;
+        while (counter[0] < value) {
+            if (System.currentTimeMillis() > deadline) {
+                return false;
+            }
+            sleep(20);
+        }
+        return true;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* displayables                                                        */
+    /* ------------------------------------------------------------------ */
+
+    /** setCurrent + settle; the standard way for a test to show a screen. */
     public static void show(Displayable displayable) {
         display().setCurrent(displayable);
         settle();
     }
 
+    /** Width of the display area, or -1 if the displayable is not shown. */
+    public static int width(Displayable displayable) {
+        return displayable.getWidth();
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* images                                                              */
+    /* ------------------------------------------------------------------ */
+
+    /** Creates a small mutable image and clears it to white. */
     public static Image mutableImage(int width, int height) {
         Image image = Image.createImage(width, height);
         image.getGraphics().setColor(0xFFFFFF);
@@ -111,6 +164,7 @@ public class Ui {
         return image;
     }
 
+    /** Mutable image with every pixel of the given colour. */
     public static Image solidImage(int width, int height, int rgb) {
         Image image = Image.createImage(width, height);
         image.getGraphics().setColor(rgb);
@@ -118,6 +172,7 @@ public class Ui {
         return image;
     }
 
+    /** Reads all pixels of an image as 0x00RRGGBB values. */
     public static int[] pixels(Image image) {
         int width = image.getWidth();
         int height = image.getHeight();
@@ -135,61 +190,47 @@ public class Ui {
     public static String hex(int value) {
         String s = Integer.toHexString(value & 0xFFFFFF).toUpperCase();
         while (s.length() < 6) {
-            s = \"0\" + s;
+            s = "0" + s;
         }
-        return \"0x\" + s;
+        return "0x" + s;
     }
 
-    // M3G helpers
+    /* ------------------------------------------------------------------ */
+    /* key names                                                           */
+    /* ------------------------------------------------------------------ */
 
-    public static boolean isM3GAvailable() {
-        try {
-            Class.forName(\"javax.microedition.m3g.Graphics3D\");
-            return true;
-        } catch (Throwable t) {
-            return false;
-        }
-    }
-
-    /**
-     * Creates a small offscreen rendering to test Graphics3D.
-     * Returns true if binding works.
-     */
-    public static boolean testGraphics3DBind() {
-        try {
-            Image img = Image.createImage(32, 32);
-            Graphics g = img.getGraphics();
-            Graphics3D g3d = Graphics3D.getInstance();
-            g3d.bindTarget(g);
-            g3d.releaseTarget();
-            return true;
-        } catch (Throwable t) {
-            return false;
-        }
-    }
-
+    /** Safe wrapper: a device may not know a key name for an action. */
     public static String actionName(Canvas canvas, int action) {
         switch (action) {
             case Canvas.UP:
-                return \"UP\";
+                return "UP";
             case Canvas.DOWN:
-                return \"DOWN\";
+                return "DOWN";
             case Canvas.LEFT:
-                return \"LEFT\";
+                return "LEFT";
             case Canvas.RIGHT:
-                return \"RIGHT\";
+                return "RIGHT";
             case Canvas.FIRE:
-                return \"FIRE\";
+                return "FIRE";
             case Canvas.GAME_A:
-                return \"GAME_A\";
+                return "GAME_A";
             case Canvas.GAME_B:
-                return \"GAME_B\";
+                return "GAME_B";
             case Canvas.GAME_C:
-                return \"GAME_C\";
+                return "GAME_C";
             case Canvas.GAME_D:
-                return \"GAME_D\";
+                return "GAME_D";
             default:
-                return \"none\";
+                return "none";
+        }
+    }
+
+    public static String keyName(Canvas canvas, int keyCode) {
+        try {
+            String name = canvas.getKeyName(keyCode);
+            return name == null ? "null" : name;
+        } catch (Throwable t) {
+            return "?" + keyCode;
         }
     }
 }

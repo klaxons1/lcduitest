@@ -1,6 +1,9 @@
 /*
- * M3G Tester - JSR-184 conformance test MIDlet.
- * Same harness as LCDUI Tester, adapted for M3G.
+ * M3GTester - MIDP 2.0 M3G conformance test MIDlet.
+ *
+ * Thrown by the Assert helper methods when a test's expectation is not met.
+ * It extends Error (not Exception) so that application-level "catch (Exception)"
+ * blocks inside tests do not swallow assertion failures by accident.
  */
 package m3gtest;
 

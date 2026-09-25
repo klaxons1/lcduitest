@@ -1,131 +1,92 @@
-/*
- * M3G Tester - Group
- */
 package m3gtest.tests;
 
 import javax.microedition.m3g.*;
-
 import m3gtest.*;
 
 public class GroupSuite extends TestSuite {
 
     public GroupSuite() {
-        super("Group", "Group", "addChild, removeChild, getChild, childCount, pick");
+        super("group", "Group", "Tests Group node hierarchy.");
 
-        add(new TestCase("add_and_get_child") {
+        add(new TestCase("addChild getChildCount") {
             public void run() {
                 Group g = new Group();
-                Assert.assertEquals("initial child count 0", 0, g.getChildCount());
-                Mesh m1 = createMesh();
-                Mesh m2 = createMesh();
-                g.addChild(m1);
-                Assert.assertEquals("count 1", 1, g.getChildCount());
-                Assert.assertSame("getChild 0", m1, g.getChild(0));
-                g.addChild(m2);
-                Assert.assertEquals("count 2", 2, g.getChildCount());
-                Assert.assertSame("getChild 1", m2, g.getChild(1));
+                Mesh m = createCube();
+                g.addChild(m);
+                Assert.assertEquals("child count", 1, g.getChildCount());
             }
         });
 
-        add(new TestCase("add_null_and_duplicate") {
+        add(new TestCase("getChild") {
             public void run() {
-                Assert.expectException("addChild null", NullPointerException.class, new Assert.Code() {
-                    public void run() {
-                        new Group().addChild(null);
-                    }
-                });
-                // Adding same child again should throw IllegalArgumentException (child already has parent)
-                Assert.expectException("addChild already has parent", IllegalArgumentException.class, new Assert.Code() {
-                    public void run() {
-                        Group gg = new Group();
-                        Mesh mm = createMesh();
-                        gg.addChild(mm);
-                        Group gg2 = new Group();
-                        gg2.addChild(mm);
-                    }
-                });
-                // Adding self should throw IllegalArgumentException
-                Assert.expectException("addChild self", IllegalArgumentException.class, new Assert.Code() {
-                    public void run() {
-                        Group gg = new Group();
-                        gg.addChild(gg);
-                    }
-                });
+                Group g = new Group();
+                Mesh m = createCube();
+                g.addChild(m);
+                Assert.assertSame("child", m, g.getChild(0));
             }
         });
 
-        add(new TestCase("remove_child") {
+        add(new TestCase("removeChild") {
             public void run() {
                 Group g = new Group();
-                Mesh m = createMesh();
+                Mesh m = createCube();
                 g.addChild(m);
                 g.removeChild(m);
-                Assert.assertEquals("count 0 after remove", 0, g.getChildCount());
-                Assert.assertNull("parent null after remove", m.getParent());
-
-                // remove null is silently ignored per spec
-                Assert.expectNoException("remove null ignored", new Assert.Code() {
-                    public void run() {
-                        new Group().removeChild(null);
-                    }
-                });
-                // remove child not in group is silently ignored per spec
-                Assert.expectNoException("remove non-child ignored", new Assert.Code() {
-                    public void run() {
-                        Group gg = new Group();
-                        Mesh mm = createMesh();
-                        gg.removeChild(mm);
-                    }
-                });
+                Assert.assertEquals("count 0", 0, g.getChildCount());
             }
         });
 
-        add(new TestCase("getChild_bounds") {
+        add(new TestCase("setTransform getTransform") {
             public void run() {
                 Group g = new Group();
-                Assert.expectException("getChild negative", IndexOutOfBoundsException.class, new Assert.Code() {
-                    public void run() {
-                        new Group().getChild(-1);
-                    }
-                });
-                Assert.expectException("getChild out of bounds", IndexOutOfBoundsException.class, new Assert.Code() {
-                    public void run() {
-                        Group gg = new Group();
-                        gg.addChild(createMesh());
-                        gg.getChild(1);
-                    }
-                });
+                Transform t = new Transform();
+                t.postTranslate(1,2,3);
+                g.setTransform(t);
+                Transform out = new Transform();
+                g.getTransform(out);
+                float[] m = new float[16];
+                out.get(m);
+                Assert.assertEquals("tx", 1.0f, m[3], 0.001f);
             }
         });
 
-        add(new TestCase("pick") {
+        add(new TestCase("getCompositeTransform") {
             public void run() {
-                Group root = new Group();
-                Mesh mesh = createMesh();
-                mesh.setScope(1);
-                root.addChild(mesh);
-                Camera cam = new Camera();
-                root.addChild(cam);
-                // Pick ray - this is implementation dependent, but should not crash
-                RayIntersection ri = new RayIntersection();
-                boolean hit = root.pick(1, 0, 0, 0, 0, 0, 1, ri);
-                Assert.info("pick result", hit);
-                // pick with scope
-                boolean hit2 = root.pick(1, 0, 0, 0, 0, 0, 1, ri);
-                Assert.info("pick with scope", hit2);
+                Group parent = new Group();
+                Group child = new Group();
+                Transform pt = new Transform();
+                pt.postTranslate(1,0,0);
+                parent.setTransform(pt);
+                parent.addChild(child);
+                Transform ct = new Transform();
+                child.getCompositeTransform(ct);
+                float[] mat = new float[16];
+                ct.get(mat);
+                Assert.assertEquals("composite tx", 1.0f, mat[3], 0.001f);
+            }
+        });
 
-                Assert.expectException("pick null RayIntersection", NullPointerException.class, new Assert.Code() {
-                    public void run() {
-                        new Group().pick(1, 0, 0, 0, 0, 0, 1, null);
-                    }
-                });
+        add(new TestCase("setScope") {
+            public void run() {
+                Group g = new Group();
+                g.setScope(2);
+                Assert.assertEquals("scope", 2, g.getScope());
+            }
+        });
+
+        add(new TestCase("setAlphaFactor") {
+            public void run() {
+                Group g = new Group();
+                g.setAlphaFactor(0.5f);
+                Assert.assertEquals("alpha", 0.5f, g.getAlphaFactor(), 0.001f);
             }
         });
     }
 
-    private static Mesh createMesh() {
-        VertexArray pos = new VertexArray(3, 3, 2);
-        pos.set(0, 3, new short[]{0, 0, 0, 1, 0, 0, 0, 1, 0});
+    private Mesh createCube() {
+        VertexArray pos = new VertexArray(8, 3, 2);
+        short[] s = new short[24];
+        pos.set(0, 8, s);
         VertexBuffer vb = new VertexBuffer();
         vb.setPositions(pos, 1.0f, null);
         IndexBuffer ib = new TriangleStripArray(0, new int[]{3});

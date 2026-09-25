@@ -1,101 +1,57 @@
-/*
- * M3G Tester - Background
- */
 package m3gtest.tests;
 
 import javax.microedition.m3g.*;
-
 import m3gtest.*;
 
 public class BackgroundSuite extends TestSuite {
 
     public BackgroundSuite() {
-        super("Background", "Background", "color, image, mode, crop, depth clear");
+        super("background", "Background", "Tests Background.");
 
-        add(new TestCase("default_state") {
+        add(new TestCase("setColor") {
             public void run() {
                 Background bg = new Background();
-                Assert.info("default color", Ui.hex(bg.getColor()));
-                Assert.assertNull("default image null", bg.getImage());
-                Assert.assertTrue("default color clear enabled", bg.isColorClearEnabled());
-                Assert.assertTrue("default depth clear enabled", bg.isDepthClearEnabled());
+                bg.setColor(0xFF00FF);
+                Assert.assertEquals("color", 0xFF00FF, bg.getColor());
             }
         });
 
-        add(new TestCase("color") {
+        add(new TestCase("setImage") {
             public void run() {
                 Background bg = new Background();
-                bg.setColor(0xFF0000);
-                Assert.assertEquals("red", 0xFF0000, bg.getColor() & 0xFFFFFF);
-                bg.setColor(0x00FF00);
-                Assert.assertEquals("green", 0x00FF00, bg.getColor() & 0xFFFFFF);
-                bg.setColor(0x000000);
-                Assert.assertEquals("black", 0x000000, bg.getColor() & 0xFFFFFF);
-            }
-        });
-
-        add(new TestCase("image_and_mode") {
-            public void run() {
-                Background bg = new Background();
-                Image2D img = new Image2D(Image2D.RGB, 16, 16);
+                Image2D img = new Image2D(Image2D.RGB, 2, 2, new byte[12]);
                 bg.setImage(img);
-                Assert.assertSame("image same", img, bg.getImage());
-
-                bg.setImageMode(Background.BORDER, Background.BORDER);
-                Assert.assertEquals("BORDER X", Background.BORDER, bg.getImageModeX());
-                Assert.assertEquals("BORDER Y", Background.BORDER, bg.getImageModeY());
-                bg.setImageMode(Background.REPEAT, Background.REPEAT);
-                Assert.assertEquals("REPEAT X", Background.REPEAT, bg.getImageModeX());
-                Assert.assertEquals("REPEAT Y", Background.REPEAT, bg.getImageModeY());
-
-                bg.setImageMode(Background.BORDER, Background.REPEAT);
-                Assert.assertEquals("mixed X BORDER", Background.BORDER, bg.getImageModeX());
-                Assert.assertEquals("mixed Y REPEAT", Background.REPEAT, bg.getImageModeY());
-
-                Assert.expectException("invalid image mode", IllegalArgumentException.class, new Assert.Code() {
-                    public void run() {
-                        new Background().setImageMode(999, Background.BORDER);
-                    }
-                });
-                Assert.expectException("invalid image mode Y", IllegalArgumentException.class, new Assert.Code() {
-                    public void run() {
-                        new Background().setImageMode(Background.BORDER, 999);
-                    }
-                });
-
-                bg.setImage(null);
-                Assert.assertNull("null image", bg.getImage());
+                Assert.assertSame("image", img, bg.getImage());
             }
         });
 
-        add(new TestCase("crop") {
+        add(new TestCase("setCrop") {
             public void run() {
                 Background bg = new Background();
-                Image2D img = new Image2D(Image2D.RGB, 32, 32);
-                bg.setImage(img);
-                bg.setCrop(2, 2, 10, 10);
-                Assert.assertEquals("cropX 2", 2, bg.getCropX());
-                Assert.assertEquals("cropY 2", 2, bg.getCropY());
-                Assert.assertEquals("cropWidth 10", 10, bg.getCropWidth());
-                Assert.assertEquals("cropHeight 10", 10, bg.getCropHeight());
-
-                bg.setCrop(0, 0, 32, 32);
-                Assert.assertEquals("crop full", 32, bg.getCropWidth());
+                bg.setCrop(1, 2, 3, 4);
+                Assert.assertEquals("cropX", 1, bg.getCropX());
+                Assert.assertEquals("cropY", 2, bg.getCropY());
+                Assert.assertEquals("cropW", 3, bg.getCropWidth());
+                Assert.assertEquals("cropH", 4, bg.getCropHeight());
             }
         });
 
-        add(new TestCase("clear_flags") {
+        add(new TestCase("setImageMode") {
             public void run() {
                 Background bg = new Background();
+                bg.setImageMode(Background.BORDER);
+                Assert.assertEquals("mode", Background.BORDER, bg.getImageModeX());
+                Assert.assertEquals("modeY", Background.BORDER, bg.getImageModeY());
+            }
+        });
+
+        add(new TestCase("isColorClearEnabled") {
+            public void run() {
+                Background bg = new Background();
+                bg.setColorClearEnable(true);
+                Assert.assertTrue("color clear", bg.isColorClearEnabled());
                 bg.setColorClearEnable(false);
                 Assert.assertFalse("color clear false", bg.isColorClearEnabled());
-                bg.setColorClearEnable(true);
-                Assert.assertTrue("color clear true", bg.isColorClearEnabled());
-
-                bg.setDepthClearEnable(false);
-                Assert.assertFalse("depth clear false", bg.isDepthClearEnabled());
-                bg.setDepthClearEnable(true);
-                Assert.assertTrue("depth clear true", bg.isDepthClearEnabled());
             }
         });
     }

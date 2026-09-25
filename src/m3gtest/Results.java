@@ -1,5 +1,10 @@
-/*
- * M3G Tester
+/**
+ * M3GTester - MIDP 2.0 M3G conformance test MIDlet.
+ *
+ * Collects the outcome of a run, prints it in a machine readable form on the
+ * standard output (this is what the headless CI harness parses) and keeps a
+ * short summary - header plus failures - in a RecordStore so the results can
+ * be inspected after the emulator was closed.
  */
 package m3gtest;
 
@@ -11,10 +16,11 @@ import javax.microedition.rms.RecordStoreException;
 
 public class Results {
 
-    public static final String TAG = \"[M3GTEST]\";
-    public static final String STORE_NAME = \"m3gtest-results\";
+    public static final String TAG = "[M3GTEST]";
+    public static final String STORE_NAME = "m3gtest-results";
     public static final int FORMAT_VERSION = 1;
 
+    /** One executed suite. */
     public static class SuiteRun {
         public final TestSuite suite;
         public final TestRunner.SuiteResult stats;
@@ -33,7 +39,7 @@ public class Results {
     private final Vector runs = new Vector();
     private long startedAt = System.currentTimeMillis();
     private long finishedAt = 0;
-    private String platform = \"\";
+    private String platform = "";
 
     public void addSuiteRun(SuiteRun run) {
         runs.addElement(run);
@@ -61,12 +67,16 @@ public class Results {
 
     public void finish() {
         finishedAt = System.currentTimeMillis();
-        platform = Env.prop(\"microedition.platform\", \"unknown\");
+        platform = Env.prop("microedition.platform", "unknown");
     }
 
     public String getPlatform() {
         return platform;
     }
+
+    /* ------------------------------------------------------------------ */
+    /* totals                                                              */
+    /* ------------------------------------------------------------------ */
 
     public int total() {
         int n = 0;
@@ -109,26 +119,32 @@ public class Results {
     }
 
     public String summary() {
-        return \"tests=\" + total() + \" passed=\" + passed() + \" failed=\" + failed() + \" errors=\" + errors() + \" info=\" + infos() + \" ms=\" + getMillis();
+        return "tests=" + total() + " passed=" + passed() + " failed=" + failed()
+                + " errors=" + errors() + " info=" + infos() + " ms=" + getMillis();
     }
 
+    /** Short one line verdict used as a menu title. */
     public String verdict() {
         if (failed() + errors() == 0) {
-            return \"ALL PASS (\" + passed() + \"/\" + total() + \")\";
+            return "ALL PASS (" + passed() + "/" + total() + ")";
         }
-        return failed() + errors() + \" FAILURES of \" + total();
+        return failed() + errors() + " FAILURES of " + total();
     }
+
+    /* ------------------------------------------------------------------ */
+    /* stdout report                                                       */
+    /* ------------------------------------------------------------------ */
 
     private static String escape(String s) {
         if (s == null) {
-            return \"\";
+            return "";
         }
         StringBuffer sb = new StringBuffer(s.length());
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
             if (c == '|') {
                 sb.append('/');
-            } else if (c == '\\n' || c == '\\r') {
+            } else if (c == '\n' || c == '\r') {
                 sb.append(' ');
             } else {
                 sb.append(c);
@@ -139,66 +155,98 @@ public class Results {
 
     public static void line(String text) {
         try {
-            System.out.println(TAG + \" \" + text);
+            System.out.println(TAG + " " + text);
         } catch (Throwable t) {
+            // printing is best effort: some devices have no stdout at all
         }
     }
 
     public void announceBegin() {
-        line(\"BEGIN version=\" + FORMAT_VERSION + \" total=\" + total() + \" platform=\" + escape(Env.prop(\"microedition.platform\", \"unknown\")));
-        line(\"ENV \" + escape(Env.prop(\"microedition.configuration\", \"?\")) + \" | \" + escape(Env.prop(\"microedition.profiles\", \"?\")) + \" | m3g=\" + escape(Env.prop(\"microedition.m3g.version\", \"?\")));
+        line("BEGIN version=" + FORMAT_VERSION + " total=" + total()
+                + " platform=" + escape(Env.prop("microedition.platform", "unknown")));
+        line("ENV " + escape(Env.prop("microedition.configuration", "?"))
+                + " | " + escape(Env.prop("microedition.profiles", "?"))
+                + " | screen=" + escape(Env.prop("m3gtest.screen", "?")));
     }
 
     public static void announceTest(SuiteRun run, TestResult result) {
-        line(\"TEST suite=\" + run.suite.getId() + \" name=\" + escape(result.getName()) + \" status=\" + result.getStatusText() + \" severity=\" + severityName(result.getSeverity()) + \" ms=\" + result.getMillis() + \" message=\" + escape(result.getMessage()));
+        line("TEST suite=" + run.suite.getId()
+                + " name=" + escape(result.getName())
+                + " status=" + result.getStatusText()
+                + " severity=" + severityName(result.getSeverity())
+                + " ms=" + result.getMillis()
+                + " message=" + escape(result.getMessage()));
     }
 
+    /** Variant for tests that are run outside a suite (single/detail re-run). */
     public static void announceTest(String suiteId, TestResult result) {
-        line(\"TEST suite=\" + suiteId + \" name=\" + escape(result.getName()) + \" status=\" + result.getStatusText() + \" severity=\" + severityName(result.getSeverity()) + \" ms=\" + result.getMillis() + \" message=\" + escape(result.getMessage()));
+        line("TEST suite=" + suiteId
+                + " name=" + escape(result.getName())
+                + " status=" + result.getStatusText()
+                + " severity=" + severityName(result.getSeverity())
+                + " ms=" + result.getMillis()
+                + " message=" + escape(result.getMessage()));
     }
 
     public static void announceSuite(SuiteRun run) {
-        line(\"SUITE id=\" + run.suite.getId() + \" total=\" + run.stats.total + \" passed=\" + run.stats.passed + \" failed=\" + run.stats.failed + \" errors=\" + run.stats.errors + \" info=\" + run.stats.infos + \" ms=\" + run.stats.millis);
+        line("SUITE id=" + run.suite.getId()
+                + " total=" + run.stats.total
+                + " passed=" + run.stats.passed
+                + " failed=" + run.stats.failed
+                + " errors=" + run.stats.errors
+                + " info=" + run.stats.infos
+                + " ms=" + run.stats.millis);
     }
 
     public void announceEnd() {
-        line(\"END \" + summary());
+        line("END " + summary());
     }
 
     public static String severityName(int severity) {
         switch (severity) {
             case TestCase.MUST:
-                return \"MUST\";
+                return "MUST";
             case TestCase.SHOULD:
-                return \"SHOULD\";
+                return "SHOULD";
             case TestCase.INFO:
-                return \"INFO\";
+                return "INFO";
             default:
-                return \"MANUAL\";
+                return "MANUAL";
         }
     }
 
+    /* ------------------------------------------------------------------ */
+    /* RecordStore persistence                                             */
+    /* ------------------------------------------------------------------ */
+
+    /** Stores header + per suite counters + failure details. */
     public void save() {
         RecordStore store = null;
         try {
             try {
                 RecordStore.deleteRecordStore(STORE_NAME);
             } catch (Throwable ignored) {
+                // no store yet
             }
             store = RecordStore.openRecordStore(STORE_NAME, true);
-            addRecord(store, \"M3GTEST|\" + FORMAT_VERSION + \"|\" + System.currentTimeMillis() + \"|\" + escape(platform) + \"|\" + total() + \"|\" + passed() + \"|\" + failed() + \"|\" + errors() + \"|\" + infos());
+            addRecord(store, "M3GTEST|" + FORMAT_VERSION
+                    + "|" + System.currentTimeMillis()
+                    + "|" + escape(platform)
+                    + "|" + total() + "|" + passed() + "|" + failed() + "|" + errors() + "|" + infos());
             for (int i = 0; i < runs.size(); i++) {
                 SuiteRun run = suiteRun(i);
-                addRecord(store, \"SUITE|\" + run.suite.getId() + \"|\" + run.stats.total + \"|\" + run.stats.passed + \"|\" + run.stats.failed + \"|\" + run.stats.errors + \"|\" + run.stats.infos);
+                addRecord(store, "SUITE|" + run.suite.getId() + "|" + run.stats.total + "|" + run.stats.passed
+                        + "|" + run.stats.failed + "|" + run.stats.errors + "|" + run.stats.infos);
                 for (int j = 0; j < run.testResults.size(); j++) {
                     TestResult result = (TestResult) run.testResults.elementAt(j);
                     if (result.isFailure()) {
-                        addRecord(store, \"FAIL|\" + run.suite.getId() + \"|\" + escape(result.getName()) + \"|\" + result.getStatusText() + \"|\" + escape(result.getMessage()));
+                        addRecord(store, "FAIL|" + run.suite.getId() + "|" + escape(result.getName())
+                                + "|" + result.getStatusText() + "|" + escape(result.getMessage()));
                     }
                 }
             }
         } catch (Throwable t) {
-            line(\"RMS-ERROR \" + escape(t.toString()));
+            line("RMS-ERROR " + escape(t.toString()));
         } finally {
             close(store);
         }
@@ -218,6 +266,11 @@ public class Results {
         }
     }
 
+    /**
+     * Reads back the header and the failure list of the last stored run.
+     *
+     * @return a Vector of String, or an empty Vector when nothing was stored.
+     */
     public static Vector loadSummary() {
         Vector lines = new Vector();
         RecordStore store = null;
@@ -231,6 +284,7 @@ public class Results {
                 }
             }
         } catch (Throwable t) {
+            // no previous run
         } finally {
             close(store);
         }

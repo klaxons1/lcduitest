@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/lcduitest.iml" filepath="$PROJECT_DIR$/lcduitest.iml" />
+      <module fileurl="file://$PROJECT_DIR$/m3gtester.iml" filepath="$PROJECT_DIR$/m3gtester.iml" />
     </modules>
   </component>
 </project>

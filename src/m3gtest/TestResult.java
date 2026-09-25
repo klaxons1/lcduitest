@@ -1,13 +1,19 @@
-/*
- * M3G Tester
+/**
+ * M3GTester - MIDP 2.0 M3G conformance test MIDlet.
+ *
+ * Outcome of a single TestCase.
  */
 package m3gtest;
 
 public class TestResult {
 
+    /** The test met every MUST expectation. */
     public static final int PASS = 0;
+    /** An expectation of the specification was not met. */
     public static final int FAIL = 1;
+    /** The test threw an exception that was not an assertion failure. */
     public static final int ERROR = 2;
+    /** Observation only (severity INFO) or manual test. */
     public static final int INFO = 3;
 
     private final TestCase test;
@@ -30,12 +36,12 @@ public class TestResult {
         return test.getName();
     }
 
-    public int getSeverity() {
-        return test.getSeverity();
-    }
-
     public int getStatus() {
         return status;
+    }
+
+    public int getSeverity() {
+        return test.getSeverity();
     }
 
     public String getMessage() {
@@ -53,13 +59,27 @@ public class TestResult {
     public String getStatusText() {
         switch (status) {
             case PASS:
-                return \"PASS\";
+                return "PASS";
             case FAIL:
-                return \"FAIL\";
+                return "FAIL";
             case ERROR:
-                return \"ERROR\";
+                return "ERROR";
             default:
-                return \"INFO\";
+                return "INFO";
+        }
+    }
+
+    /** Single character used as a prefix in the results list. */
+    public String getMark() {
+        switch (status) {
+            case PASS:
+                return "+";
+            case FAIL:
+                return "x";
+            case ERROR:
+                return "!";
+            default:
+                return "i";
         }
     }
 }

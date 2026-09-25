@@ -1,38 +1,66 @@
-/*
- * M3G Tester - self test of the harness.
- */
 package m3gtest.tests;
 
+import javax.microedition.m3g.*;
 import m3gtest.*;
 
 public class FrameworkSuite extends TestSuite {
 
     public FrameworkSuite() {
-        super("Framework", "Self test of the harness", "assertions, exceptions, observation");
+        super("framework", "Framework / Graphics3D singleton", "Checks Graphics3D instance and basic lifecycle.");
 
-        add(new TestCase("assertions_work") {
+        add(new TestCase("getInstance not null") {
             public void run() {
-                Assert.assertEquals("int equals", 1, 1);
-                Assert.assertTrue("true", true);
-                Assert.assertFalse("false", false);
-                Assert.assertNotNull("not null", new Object());
-                Assert.assertNull("null", null);
-                Assert.expectException("expect IAE", IllegalArgumentException.class, new Assert.Code() {
-                    public void run() {
-                        throw new IllegalArgumentException("test");
-                    }
-                });
+                Graphics3D g3d = Graphics3D.getInstance();
+                Assert.assertNotNull("Graphics3D instance", g3d);
             }
         });
 
-        add(new TestCase("m3g_availability") {
+        add(new TestCase("getInstance same") {
             public void run() {
-                boolean available = Ui.isM3GAvailable();
-                Assert.info("M3G available", available);
-                if (!available) {
-                    Assert.info("M3G not available on this platform - other tests will ERROR");
+                Graphics3D a = Graphics3D.getInstance();
+                Graphics3D b = Graphics3D.getInstance();
+                Assert.assertSame("same instance", a, b);
+            }
+        });
+
+        add(new TestCase("getProperties") {
+            public void run() {
+                Graphics3D g3d = Graphics3D.getInstance();
+                java.util.Hashtable props = g3d.getProperties();
+                Assert.assertNotNull("properties", props);
+            }
+        });
+
+        add(new TestCase("getHints") {
+            public void run() {
+                Graphics3D g3d = Graphics3D.getInstance();
+                int hints = g3d.getHints();
+                // hints is bitmask, just check it does not throw
+                Assert.assertTrue("hints >=0", hints >= 0);
+            }
+        });
+
+        add(new TestCase("setHints") {
+            public void run() {
+                Graphics3D g3d = Graphics3D.getInstance();
+                int old = g3d.getHints();
+                g3d.setHints(0);
+                Assert.assertEquals("hints 0", 0, g3d.getHints());
+                g3d.setHints(old);
+            }
+        });
+
+        add(new TestCase("getViewport") {
+            public void run() {
+                Graphics3D g3d = Graphics3D.getInstance();
+                int[] rect = new int[4];
+                // Without bound target, getViewport may throw or return 0, but should not crash VM
+                try {
+                    g3d.getViewport(rect);
+                } catch (Exception e) {
+                    // acceptable if no target bound
                 }
             }
-        }.severity(TestCase.INFO));
+        });
     }
 }

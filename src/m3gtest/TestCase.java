@@ -1,13 +1,34 @@
-/*
- * M3G Tester - JSR-184 conformance test MIDlet.
+/**
+ * M3GTester - MIDP 2.0 M3G conformance test MIDlet.
+ *
+ * A single test. Subclasses implement run() and use the Assert methods.
+ *
+ * Severity tells the reporter how a failure must be interpreted:
+ *
+ *   MUST   - the behaviour is mandated by the MIDP 2.0 specification.
+ *            A failure means the emulator/device violates the specification.
+ *   SHOULD - the behaviour is strongly implied by the specification but a
+ *            platform is allowed some latitude (e.g. exact pixel of a rounded
+ *            rectangle). Failures are reported separately from MUST failures.
+ *   INFO   - pure observation. The test never fails; it records what the
+ *            platform does so the value can be compared between emulators.
+ *   MANUAL - the test needs a human (press this key, look at the screen).
+ *            It records what was observed and never fails the run.
+ *
+ * Test cases are usually written as anonymous subclasses of an inner Case
+ * class so that a whole area of the API can live in one source file.
  */
 package m3gtest;
 
 public abstract class TestCase {
 
+    /** Behaviour mandated by the specification. */
     public static final int MUST = 0;
+    /** Behaviour implied by the specification but with platform latitude. */
     public static final int SHOULD = 1;
+    /** Observation only; never fails. */
     public static final int INFO = 2;
+    /** Needs a human in front of the device; never fails. */
     public static final int MANUAL = 3;
 
     private final String name;
@@ -15,6 +36,10 @@ public abstract class TestCase {
     private int severity = MUST;
     private boolean interactive = false;
 
+    /**
+     * Set by the runner while this test executes so that helpers such as
+     * Assert.info() know where to record observations.
+     */
     static TestCase current = null;
 
     public TestCase(String name) {
@@ -43,6 +68,7 @@ public abstract class TestCase {
         return this;
     }
 
+    /** Marks the test as manually driven; it is run last, with a long timeout. */
     public TestCase manual() {
         severity = MANUAL;
         interactive = true;
@@ -55,6 +81,9 @@ public abstract class TestCase {
 
     public abstract void run() throws Exception;
 
+    /*
+     * Observation recorded by Assert.info(...) during the test.
+     */
     private String observed = null;
 
     void note(String text) {

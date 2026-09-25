@@ -1,52 +1,33 @@
-/*
- * M3G Tester - catalogue of visual demos
- */
 package m3gtest.demos;
 
 import javax.microedition.lcdui.Displayable;
 
 public class Demos {
 
-    private Demos() {
+    private Demos() {}
+
+    public static String[] titles() {
+        return new String[] {
+            "Rotating cube",
+            "World demo",
+            "Textured cube",
+            "Sprite3D",
+            "Morphing",
+            "Transparency",
+            "Picking"
+        };
     }
 
-    public static Demo[] all() {
-        return new Demo[]{
-            new Demo("Rotating cube - immediate mode") {
-                public Displayable createScreen() {
-                    return new CanvasDemos.RotatingCube();
-                }
-            },
-            new Demo("World + Camera + Light - retained mode") {
-                public Displayable createScreen() {
-                    return new CanvasDemos.WorldDemo();
-                }
-            },
-            new Demo("Texture + Material + Fog") {
-                public Displayable createScreen() {
-                    return new CanvasDemos.TexturedCube();
-                }
-            },
-            new Demo("Sprite3D") {
-                public Displayable createScreen() {
-                    return new CanvasDemos.Sprite3DDemo();
-                }
-            },
-            new Demo("MorphingMesh") {
-                public Displayable createScreen() {
-                    return new CanvasDemos.MorphingDemo();
-                }
-            },
-            new Demo("Transparency & CompositingMode") {
-                public Displayable createScreen() {
-                    return new CanvasDemos.TransparencyDemo();
-                }
-            },
-            new Demo("Picking - RayIntersection") {
-                public Displayable createScreen() {
-                    return new CanvasDemos.PickingDemo();
-                }
-            }
-        };
+    public static Displayable create(int index) {
+        switch (index) {
+            case 0: return new CanvasDemos.RotatingCube();
+            case 1: return new CanvasDemos.WorldDemo();
+            case 2: return new CanvasDemos.TexturedCube();
+            case 3: return new CanvasDemos.Sprite3DDemo();
+            case 4: return new CanvasDemos.MorphingDemo();
+            case 5: return new CanvasDemos.TransparencyDemo();
+            case 6: return new CanvasDemos.PickingDemo();
+            default: return null;
+        }
     }
 }

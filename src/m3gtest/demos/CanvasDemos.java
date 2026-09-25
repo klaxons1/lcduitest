@@ -19,7 +19,7 @@ public class CanvasDemos {
     abstract static class Base extends Canvas {
 
         private final String heading;
-        private String hint = \"\";
+        private String hint = "";
 
         Base(String heading) {
             this.heading = heading;
@@ -62,9 +62,9 @@ public class CanvasDemos {
     /* M3G base that binds Graphics3D and handles errors                   */
     /* ------------------------------------------------------------------ */
 
-    abstract static class M3GBase extends Canvas {
+    public abstract static class M3GBase extends Canvas {
 
-        protected String status = \"init\";
+        protected String status = "init";
         protected int frame = 0;
         protected Thread animator;
         protected boolean running;
@@ -116,12 +116,12 @@ public class CanvasDemos {
                     g3d.releaseTarget();
                 }
                 g.setColor(0xFFFFFF);
-                g.drawString(status + \" f=\" + frame, 2, 2, Graphics.TOP | Graphics.LEFT);
+                g.drawString(status + " f=" + frame, 2, 2, Graphics.TOP | Graphics.LEFT);
             } catch (Throwable t) {
                 g.setColor(0xFFFFFF);
                 g.fillRect(0, 0, w, h);
                 g.setColor(0xFF0000);
-                g.drawString(\"M3G error: \" + t, 2, 2, Graphics.TOP | Graphics.LEFT);
+                g.drawString("M3G error: " + t, 2, 2, Graphics.TOP | Graphics.LEFT);
                 g.drawString(t.toString(), 2, 2 + small.getHeight(), Graphics.TOP | Graphics.LEFT);
                 status = t.toString();
             }
@@ -134,7 +134,7 @@ public class CanvasDemos {
     /* Demos                                                               */
     /* ------------------------------------------------------------------ */
 
-    static class RotatingCube extends M3GBase {
+    public static class RotatingCube extends M3GBase {
 
         private Camera camera;
         private Light light;
@@ -142,8 +142,8 @@ public class CanvasDemos {
         private Transform camTransform = new Transform();
         private Transform cubeTransform = new Transform();
 
-        RotatingCube() {
-            super(\"Rotating cube\");
+        public RotatingCube() {
+            super("Rotating cube");
             try {
                 camera = new Camera();
                 camera.setPerspective(60.0f, (float) getWidth() / getHeight(), 1.0f, 100.0f);
@@ -152,9 +152,9 @@ public class CanvasDemos {
                 light.setMode(Light.DIRECTIONAL);
                 light.setColor(0xFFFFFF);
                 cube = createCube(1.0f);
-                status = \"cube created\";
+                status = "cube created";
             } catch (Throwable t) {
-                status = \"init failed: \" + t;
+                status = "init failed: " + t;
             }
         }
 
@@ -170,13 +170,13 @@ public class CanvasDemos {
         }
     }
 
-    static class WorldDemo extends M3GBase {
+    public static class WorldDemo extends M3GBase {
 
         private World world;
         private Camera camera;
 
-        WorldDemo() {
-            super(\"World demo\");
+        public WorldDemo() {
+            super("World demo");
             try {
                 world = new World();
                 camera = new Camera();
@@ -195,15 +195,14 @@ public class CanvasDemos {
                 Mesh cube = createCube(1.5f);
                 cube.setTransform(new Transform());
                 world.addChild(cube);
-                status = \"world with cube\";
+                status = "world with cube";
             } catch (Throwable t) {
-                status = \"init failed: \" + t;
+                status = "init failed: " + t;
             }
         }
 
         protected void paintM3G(Graphics3D g3d, int w, int h) throws Exception {
             if (world == null) return;
-            // animate cube
             if (world.getChildCount() > 2) {
                 Node n = world.getChild(2);
                 Transform t = new Transform();
@@ -214,20 +213,19 @@ public class CanvasDemos {
         }
     }
 
-    static class TexturedCube extends M3GBase {
+    public static class TexturedCube extends M3GBase {
 
         private Mesh cube;
         private Camera camera;
         private Transform camT = new Transform();
         private Transform cubeT = new Transform();
 
-        TexturedCube() {
-            super(\"Textured cube\");
+        public TexturedCube() {
+            super("Textured cube");
             try {
                 camera = new Camera();
                 camera.setPerspective(60, 1.33f, 1, 100);
                 camT.postTranslate(0, 0, 6);
-                // Create checker texture
                 javax.microedition.lcdui.Image img = javax.microedition.lcdui.Image.createImage(64, 64);
                 Graphics g = img.getGraphics();
                 g.setColor(0xFFFFFF);
@@ -257,9 +255,9 @@ public class CanvasDemos {
 
                 cube = createCubeWithTexCoords(1.2f, ap);
 
-                status = \"textured cube\";
+                status = "textured cube";
             } catch (Throwable t) {
-                status = \"init failed: \" + t;
+                status = "init failed: " + t;
             }
         }
 
@@ -277,15 +275,15 @@ public class CanvasDemos {
         }
     }
 
-    static class Sprite3DDemo extends M3GBase {
+    public static class Sprite3DDemo extends M3GBase {
 
         private Sprite3D sprite;
         private Camera camera;
         private Transform camT = new Transform();
         private Transform spriteT = new Transform();
 
-        Sprite3DDemo() {
-            super(\"Sprite3D\");
+        public Sprite3DDemo() {
+            super("Sprite3D");
             try {
                 camera = new Camera();
                 camera.setParallel(4, 4, 1, 100);
@@ -299,9 +297,9 @@ public class CanvasDemos {
                 Image2D image2D = new Image2D(Image2D.RGBA, img);
                 Appearance ap = new Appearance();
                 sprite = new Sprite3D(false, image2D, ap);
-                status = \"sprite created\";
+                status = "sprite created";
             } catch (Throwable t) {
-                status = \"init failed: \" + t;
+                status = "init failed: " + t;
             }
         }
 
@@ -314,14 +312,14 @@ public class CanvasDemos {
         }
     }
 
-    static class MorphingDemo extends M3GBase {
+    public static class MorphingDemo extends M3GBase {
 
         private MorphingMesh morph;
         private Camera camera;
         private Transform camT = new Transform();
 
-        MorphingDemo() {
-            super(\"Morphing\");
+        public MorphingDemo() {
+            super("Morphing");
             try {
                 camera = new Camera();
                 camera.setPerspective(60, 1, 1, 100);
@@ -330,9 +328,9 @@ public class CanvasDemos {
                 VertexBuffer target = createTriangleVB(new float[]{0, 0, 0, 1, 0, 0, 0.5f, 1.5f, 0});
                 IndexBuffer ib = new TriangleStripArray(0, new int[]{3});
                 morph = new MorphingMesh(base, new VertexBuffer[]{target}, ib, new Appearance());
-                status = \"morph created\";
+                status = "morph created";
             } catch (Throwable t) {
-                status = \"init failed: \" + t;
+                status = "init failed: " + t;
             }
         }
 
@@ -346,14 +344,14 @@ public class CanvasDemos {
         }
     }
 
-    static class TransparencyDemo extends M3GBase {
+    public static class TransparencyDemo extends M3GBase {
 
         private Mesh cube1, cube2;
         private Camera camera;
         private Transform camT = new Transform();
 
-        TransparencyDemo() {
-            super(\"Transparency\");
+        public TransparencyDemo() {
+            super("Transparency");
             try {
                 camera = new Camera();
                 camera.setPerspective(60, 1, 1, 100);
@@ -377,9 +375,9 @@ public class CanvasDemos {
                 ap2.setMaterial(m2);
                 cube2 = createCubeWithAppearance(0.7f, ap2);
 
-                status = \"two cubes alpha\";
+                status = "two cubes alpha";
             } catch (Throwable t) {
-                status = \"init failed: \" + t;
+                status = "init failed: " + t;
             }
         }
 
@@ -398,13 +396,13 @@ public class CanvasDemos {
         }
     }
 
-    static class PickingDemo extends M3GBase {
+    public static class PickingDemo extends M3GBase {
 
         private World world;
-        private String pickInfo = \"no pick\";
+        private String pickInfo = "no pick";
 
-        PickingDemo() {
-            super(\"Picking\");
+        public PickingDemo() {
+            super("Picking");
             try {
                 world = new World();
                 Camera cam = new Camera();
@@ -420,9 +418,9 @@ public class CanvasDemos {
                 Mesh cube = createCube(1.0f);
                 cube.setScope(1);
                 world.addChild(cube);
-                status = \"tap to pick\";
+                status = "tap to pick";
             } catch (Throwable t) {
-                status = \"init failed: \" + t;
+                status = "init failed: " + t;
             }
         }
 
@@ -430,16 +428,15 @@ public class CanvasDemos {
             if (world == null) return;
             try {
                 RayIntersection ri = new RayIntersection();
-                // Simple pick: ray from camera through screen? For demo, just pick from origin forward
                 boolean hit = world.pick(1, 0, 0, 0, 0, 0, 1, ri);
                 if (hit) {
-                    pickInfo = \"hit dist=\" + ri.getDistance() + \" obj=\" + ri.getIntersected();
+                    pickInfo = "hit dist=" + ri.getDistance() + " obj=" + ri.getIntersected();
                 } else {
-                    pickInfo = \"miss\";
+                    pickInfo = "miss";
                 }
                 status = pickInfo;
             } catch (Throwable t) {
-                pickInfo = \"pick error \" + t;
+                pickInfo = "pick error " + t;
             }
         }
 
@@ -470,11 +467,10 @@ public class CanvasDemos {
     }
 
     private static Mesh createCubeWithAppearance(float size, Appearance ap) {
-        // 8 vertices of cube
         float hs = size / 2;
         float[] verts = new float[]{
-            -hs, -hs, hs, hs, -hs, hs, hs, hs, hs, -hs, hs, hs, // front
-            -hs, -hs, -hs, -hs, hs, -hs, hs, hs, -hs, hs, -hs, -hs // back
+            -hs, -hs, hs, hs, -hs, hs, hs, hs, hs, -hs, hs, hs,
+            -hs, -hs, -hs, -hs, hs, -hs, hs, hs, -hs, hs, -hs, -hs
         };
         VertexArray pos = new VertexArray(8, 3, 2);
         short[] s = new short[24];
@@ -485,29 +481,24 @@ public class CanvasDemos {
         VertexBuffer vb = new VertexBuffer();
         vb.setPositions(pos, 0.001f, null);
 
-        // 12 triangles (2 per face) = 36 indices
         int[] indices = new int[]{
-            0, 1, 2, 0, 2, 3, // front
-            1, 5, 6, 1, 6, 2, // right
-            5, 4, 7, 5, 7, 6, // back
-            4, 0, 3, 4, 3, 7, // left
-            3, 2, 6, 3, 6, 7, // top
-            4, 5, 1, 4, 1, 0  // bottom
+            0, 1, 2, 0, 2, 3,
+            1, 5, 6, 1, 6, 2,
+            5, 4, 7, 5, 7, 6,
+            4, 0, 3, 4, 3, 7,
+            3, 2, 6, 3, 6, 7,
+            4, 5, 1, 4, 1, 0
         };
         IndexBuffer ib = new TriangleStripArray(indices, new int[]{3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3});
-        // Actually TriangleStripArray with 3 per strip works as triangles
-        // Use explicit indices
         return new Mesh(vb, ib, ap);
     }
 
     private static Mesh createCubeWithTexCoords(float size, Appearance ap) {
         float hs = size / 2;
-        // 24 vertices (4 per face *6) to have distinct texcoords
         float[] positions = new float[24 * 3];
         float[] tex = new float[24 * 2];
         int v = 0;
         int t = 0;
-        // front
         float[][] faces = new float[][]{
             {-hs, -hs, hs, hs, -hs, hs, hs, hs, hs, -hs, hs, hs},
             {hs, -hs, hs, hs, -hs, -hs, hs, hs, -hs, hs, hs, hs},
