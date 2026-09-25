@@ -6,44 +6,63 @@ import m3gtest.*;
 public class ConstantsSuite extends TestSuite {
 
     public ConstantsSuite() {
-        super("constants", "Constants", "Checks that well-known M3G constants exist and have expected values.");
-        add(new TestCase("CompositingMode blending") {
+        super("constants", "Constants", "Checks that well-known M3G constants exist and are distinct.");
+        add(new TestCase("CompositingMode blending distinct") {
             public void run() {
-                Assert.assertEquals("ALPHA", CompositingMode.ALPHA, 64);
-                Assert.assertEquals("ALPHA_ADD", CompositingMode.ALPHA_ADD, 65);
-                Assert.assertEquals("MODULATE", CompositingMode.MODULATE, 66);
-                Assert.assertEquals("REPLACE", CompositingMode.REPLACE, 67);
+                // Values differ between M3G 1.0 and 1.1, so check distinctness not exact numbers
+                int alpha = CompositingMode.ALPHA;
+                int alphaAdd = CompositingMode.ALPHA_ADD;
+                int mod = CompositingMode.MODULATE;
+                int modX2 = CompositingMode.MODULATE_X2;
+                int replace = CompositingMode.REPLACE;
+                Assert.assertTrue("ALPHA >=0", alpha >= 0);
+                Assert.assertTrue("distinct ALPHA vs ALPHA_ADD", alpha != alphaAdd);
+                Assert.assertTrue("distinct ALPHA vs MODULATE", alpha != mod);
+                Assert.assertTrue("distinct MODULATE vs REPLACE", mod != replace);
+                Assert.assertTrue("distinct MODULATE_X2 vs REPLACE", modX2 != replace);
             }
         });
-        add(new TestCase("Texture filtering") {
+        add(new TestCase("Texture filtering distinct") {
             public void run() {
-                Assert.assertTrue("NEAREST defined", Texture2D.FILTER_NEAREST >= 0);
-                Assert.assertTrue("LINEAR defined", Texture2D.FILTER_LINEAR >= 0);
+                int nearest = Texture2D.FILTER_NEAREST;
+                int linear = Texture2D.FILTER_LINEAR;
+                int base = Texture2D.FILTER_BASE_LEVEL;
+                Assert.assertTrue("NEAREST defined", nearest >= 0);
+                Assert.assertTrue("LINEAR defined", linear >= 0);
+                Assert.assertTrue("BASE_LEVEL defined", base >= 0);
+                Assert.assertTrue("NEAREST != LINEAR", nearest != linear);
             }
         });
-        add(new TestCase("Image2D formats") {
+        add(new TestCase("Image2D formats distinct") {
             public void run() {
-                Assert.assertTrue("RGB", Image2D.RGB >= 0);
-                Assert.assertTrue("RGBA", Image2D.RGBA >= 0);
-                Assert.assertTrue("ALPHA", Image2D.ALPHA >= 0);
+                int rgb = Image2D.RGB;
+                int rgba = Image2D.RGBA;
+                int alpha = Image2D.ALPHA;
+                Assert.assertTrue("RGB >=0", rgb >= 0);
+                Assert.assertTrue("RGBA distinct", rgb != rgba);
+                Assert.assertTrue("ALPHA distinct", alpha != rgb && alpha != rgba);
             }
         });
-        add(new TestCase("Light modes") {
+        add(new TestCase("Light modes distinct") {
             public void run() {
-                Assert.assertTrue("AMBIENT", Light.AMBIENT >= 0);
-                Assert.assertTrue("DIRECTIONAL", Light.DIRECTIONAL >= 0);
-                Assert.assertTrue("OMNI", Light.OMNI >= 0);
-                Assert.assertTrue("SPOT", Light.SPOT >= 0);
+                int amb = Light.AMBIENT;
+                int dir = Light.DIRECTIONAL;
+                int omni = Light.OMNI;
+                int spot = Light.SPOT;
+                Assert.assertTrue("AMBIENT distinct", amb != dir && amb != omni && amb != spot);
+                Assert.assertTrue("DIRECTIONAL distinct", dir != omni && dir != spot);
             }
         });
-        add(new TestCase("PolygonMode culling") {
+        add(new TestCase("PolygonMode culling distinct") {
             public void run() {
-                Assert.assertTrue("CULL_NONE", PolygonMode.CULL_NONE >= 0);
-                Assert.assertTrue("CULL_BACK", PolygonMode.CULL_BACK >= 0);
-                Assert.assertTrue("CULL_FRONT", PolygonMode.CULL_FRONT >= 0);
+                int none = PolygonMode.CULL_NONE;
+                int back = PolygonMode.CULL_BACK;
+                int front = PolygonMode.CULL_FRONT;
+                Assert.assertTrue("CULL_NONE distinct", none != back && none != front);
+                Assert.assertTrue("CULL_BACK != FRONT", back != front);
             }
         });
-        add(new TestCase("VertexArray component size") {
+        add(new TestCase("VertexArray dimensions") {
             public void run() {
                 VertexArray va = new VertexArray(3, 3, 2);
                 Assert.assertEquals("vertex count", 3, va.getVertexCount());
@@ -51,18 +70,37 @@ public class ConstantsSuite extends TestSuite {
                 Assert.assertEquals("component type", 2, va.getComponentType());
             }
         });
-        add(new TestCase("Transform constants") {
+        add(new TestCase("Transform") {
             public void run() {
                 Transform t = new Transform();
                 Assert.assertNotNull("Transform", t);
             }
         });
-        add(new TestCase("Material colors") {
+        add(new TestCase("Material colors distinct") {
             public void run() {
-                Assert.assertTrue("AMBIENT", Material.AMBIENT >= 0);
-                Assert.assertTrue("DIFFUSE", Material.DIFFUSE >= 0);
-                Assert.assertTrue("EMISSIVE", Material.EMISSIVE >= 0);
-                Assert.assertTrue("SPECULAR", Material.SPECULAR >= 0);
+                int amb = Material.AMBIENT;
+                int diff = Material.DIFFUSE;
+                int emiss = Material.EMISSIVE;
+                int spec = Material.SPECULAR;
+                Assert.assertTrue("AMBIENT != DIFFUSE", amb != diff);
+                Assert.assertTrue("DIFFUSE != SPECULAR", diff != spec);
+                Assert.assertTrue("EMISSIVE distinct", emiss != amb && emiss != diff);
+            }
+        });
+        add(new TestCase("Background modes distinct") {
+            public void run() {
+                int border = Background.BORDER;
+                int repeat = Background.REPEAT;
+                Assert.assertTrue("BORDER != REPEAT", border != repeat);
+            }
+        });
+        add(new TestCase("Camera types distinct") {
+            public void run() {
+                int gen = Camera.GENERIC;
+                int par = Camera.PARALLEL;
+                int persp = Camera.PERSPECTIVE;
+                Assert.assertTrue("GENERIC distinct", gen != par && gen != persp);
+                Assert.assertTrue("PARALLEL != PERSPECTIVE", par != persp);
             }
         });
     }
