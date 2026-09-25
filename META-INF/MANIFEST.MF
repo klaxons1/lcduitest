@@ -5,6 +5,5 @@ MIDlet-Vendor: M3GTester
 MIDlet-Version: 1.0.0
 MIDlet-Name: M3GTester
 MIDlet-1: M3GTester,,lcduitester
-MIDlet-2: M3GTester2,,m3gtester
 MIDlet-Jar-URL: m3gtester.jar
 MicroEdition-Requirements: M3G 1.1

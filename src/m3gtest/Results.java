@@ -1,10 +1,5 @@
 /**
- * LcduiTest - MIDP 2.0 LCDUI conformance test MIDlet.
- *
- * Collects the outcome of a run, prints it in a machine readable form on the
- * standard output (this is what the headless CI harness parses) and keeps a
- * short summary - header plus failures - in a RecordStore so the results can
- * be inspected after the emulator was closed.
+ * M3G Tester - collects test outcomes, prints machine readable log with TAG [M3GTEST]
  */
 package m3gtest;
 
@@ -16,11 +11,10 @@ import javax.microedition.rms.RecordStoreException;
 
 public class Results {
 
-    public static final String TAG = "[LCDUITEST]";
-    public static final String STORE_NAME = "lcduitest-results";
+    public static final String TAG = "[M3GTEST]";
+    public static final String STORE_NAME = "m3gtest-results";
     public static final int FORMAT_VERSION = 1;
 
-    /** One executed suite. */
     public static class SuiteRun {
         public final TestSuite suite;
         public final TestRunner.SuiteResult stats;
@@ -74,10 +68,6 @@ public class Results {
         return platform;
     }
 
-    /* ------------------------------------------------------------------ */
-    /* totals                                                              */
-    /* ------------------------------------------------------------------ */
-
     public int total() {
         int n = 0;
         for (int i = 0; i < runs.size(); i++) {
@@ -123,17 +113,12 @@ public class Results {
                 + " errors=" + errors() + " info=" + infos() + " ms=" + getMillis();
     }
 
-    /** Short one line verdict used as a menu title. */
     public String verdict() {
         if (failed() + errors() == 0) {
             return "ALL PASS (" + passed() + "/" + total() + ")";
         }
         return failed() + errors() + " FAILURES of " + total();
     }
-
-    /* ------------------------------------------------------------------ */
-    /* stdout report                                                       */
-    /* ------------------------------------------------------------------ */
 
     private static String escape(String s) {
         if (s == null) {
@@ -157,7 +142,6 @@ public class Results {
         try {
             System.out.println(TAG + " " + text);
         } catch (Throwable t) {
-            // printing is best effort: some devices have no stdout at all
         }
     }
 
@@ -178,7 +162,6 @@ public class Results {
                 + " message=" + escape(result.getMessage()));
     }
 
-    /** Variant for tests that are run outside a suite (single/detail re-run). */
     public static void announceTest(String suiteId, TestResult result) {
         line("TEST suite=" + suiteId
                 + " name=" + escape(result.getName())
@@ -215,21 +198,15 @@ public class Results {
         }
     }
 
-    /* ------------------------------------------------------------------ */
-    /* RecordStore persistence                                             */
-    /* ------------------------------------------------------------------ */
-
-    /** Stores header + per suite counters + failure details. */
     public void save() {
         RecordStore store = null;
         try {
             try {
                 RecordStore.deleteRecordStore(STORE_NAME);
             } catch (Throwable ignored) {
-                // no store yet
             }
             store = RecordStore.openRecordStore(STORE_NAME, true);
-            addRecord(store, "LCDUITEST|" + FORMAT_VERSION
+            addRecord(store, "M3GTEST|" + FORMAT_VERSION
                     + "|" + System.currentTimeMillis()
                     + "|" + escape(platform)
                     + "|" + total() + "|" + passed() + "|" + failed() + "|" + errors() + "|" + infos());
@@ -266,11 +243,6 @@ public class Results {
         }
     }
 
-    /**
-     * Reads back the header and the failure list of the last stored run.
-     *
-     * @return a Vector of String, or an empty Vector when nothing was stored.
-     */
     public static Vector loadSummary() {
         Vector lines = new Vector();
         RecordStore store = null;
@@ -284,7 +256,6 @@ public class Results {
                 }
             }
         } catch (Throwable t) {
-            // no previous run
         } finally {
             close(store);
         }
