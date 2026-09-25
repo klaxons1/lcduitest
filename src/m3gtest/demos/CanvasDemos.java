@@ -9,58 +9,10 @@ import javax.microedition.lcdui.Graphics;
 
 import javax.microedition.m3g.*;
 
-import m3gtest.Ui;
-
 public class CanvasDemos {
 
     private CanvasDemos() {
     }
-
-    abstract static class Base extends Canvas {
-
-        private final String heading;
-        private String hint = "";
-
-        Base(String heading) {
-            this.heading = heading;
-        }
-
-        protected void hint(String text) {
-            hint = text;
-        }
-
-        protected int bodyTop() {
-            return Font.getFont(Font.FACE_SYSTEM, Font.STYLE_PLAIN, Font.SIZE_SMALL).getHeight() + 2;
-        }
-
-        protected void paint(Graphics g) {
-            int w = getWidth();
-            int h = getHeight();
-            Font small = Font.getFont(Font.FACE_SYSTEM, Font.STYLE_PLAIN, Font.SIZE_SMALL);
-            g.setFont(small);
-            g.setColor(0x000000);
-            g.fillRect(0, 0, w, bodyTop());
-            g.setColor(0xFFFFFF);
-            g.drawString(heading, 2, 1, Graphics.TOP | Graphics.LEFT);
-            int top = bodyTop();
-            int bottom = h;
-            if (hint.length() > 0) {
-                bottom = h - small.getHeight();
-                g.setColor(0x000000);
-                g.drawString(hint, 2, bottom, Graphics.TOP | Graphics.LEFT);
-            }
-            g.setColor(0xFFFFFF);
-            g.fillRect(0, top, w, bottom - top);
-            g.setColor(0x000000);
-            paintBody(g, 0, top, w, bottom - top);
-        }
-
-        protected abstract void paintBody(Graphics g, int x, int y, int w, int h);
-    }
-
-    /* ------------------------------------------------------------------ */
-    /* M3G base that binds Graphics3D and handles errors                   */
-    /* ------------------------------------------------------------------ */
 
     public abstract static class M3GBase extends Canvas {
 
@@ -130,12 +82,7 @@ public class CanvasDemos {
         protected abstract void paintM3G(Graphics3D g3d, int w, int h) throws Exception;
     }
 
-    /* ------------------------------------------------------------------ */
-    /* Demos                                                               */
-    /* ------------------------------------------------------------------ */
-
     public static class RotatingCube extends M3GBase {
-
         private Camera camera;
         private Light light;
         private Mesh cube;
@@ -171,15 +118,12 @@ public class CanvasDemos {
     }
 
     public static class WorldDemo extends M3GBase {
-
         private World world;
-        private Camera camera;
-
         public WorldDemo() {
             super("World demo");
             try {
                 world = new World();
-                camera = new Camera();
+                Camera camera = new Camera();
                 camera.setPerspective(60.0f, 1.0f, 1.0f, 50.0f);
                 Transform ct = new Transform();
                 ct.postTranslate(0, 0, 8);
@@ -200,7 +144,6 @@ public class CanvasDemos {
                 status = "init failed: " + t;
             }
         }
-
         protected void paintM3G(Graphics3D g3d, int w, int h) throws Exception {
             if (world == null) return;
             if (world.getChildCount() > 2) {
@@ -214,12 +157,10 @@ public class CanvasDemos {
     }
 
     public static class TexturedCube extends M3GBase {
-
         private Mesh cube;
         private Camera camera;
         private Transform camT = new Transform();
         private Transform cubeT = new Transform();
-
         public TexturedCube() {
             super("Textured cube");
             try {
@@ -243,7 +184,6 @@ public class CanvasDemos {
                 tex.setFiltering(Texture2D.FILTER_LINEAR, Texture2D.FILTER_LINEAR);
                 tex.setWrapping(Texture2D.WRAP_REPEAT, Texture2D.WRAP_REPEAT);
                 tex.setBlending(Texture2D.FUNC_MODULATE);
-
                 Appearance ap = new Appearance();
                 ap.setTexture(0, tex);
                 Material mat = new Material();
@@ -252,15 +192,12 @@ public class CanvasDemos {
                 PolygonMode pm = new PolygonMode();
                 pm.setShading(PolygonMode.SHADE_SMOOTH);
                 ap.setPolygonMode(pm);
-
                 cube = createCubeWithTexCoords(1.2f, ap);
-
                 status = "textured cube";
             } catch (Throwable t) {
                 status = "init failed: " + t;
             }
         }
-
         protected void paintM3G(Graphics3D g3d, int w, int h) throws Exception {
             if (cube == null) return;
             camera.setPerspective(60, (float) w / h, 1, 100);
@@ -276,12 +213,10 @@ public class CanvasDemos {
     }
 
     public static class Sprite3DDemo extends M3GBase {
-
         private Sprite3D sprite;
         private Camera camera;
         private Transform camT = new Transform();
         private Transform spriteT = new Transform();
-
         public Sprite3DDemo() {
             super("Sprite3D");
             try {
@@ -302,7 +237,6 @@ public class CanvasDemos {
                 status = "init failed: " + t;
             }
         }
-
         protected void paintM3G(Graphics3D g3d, int w, int h) throws Exception {
             if (sprite == null) return;
             g3d.setCamera(camera, camT);
@@ -313,11 +247,9 @@ public class CanvasDemos {
     }
 
     public static class MorphingDemo extends M3GBase {
-
         private MorphingMesh morph;
         private Camera camera;
         private Transform camT = new Transform();
-
         public MorphingDemo() {
             super("Morphing");
             try {
@@ -333,7 +265,6 @@ public class CanvasDemos {
                 status = "init failed: " + t;
             }
         }
-
         protected void paintM3G(Graphics3D g3d, int w, int h) throws Exception {
             if (morph == null) return;
             camera.setPerspective(60, (float) w / h, 1, 100);
@@ -345,11 +276,9 @@ public class CanvasDemos {
     }
 
     public static class TransparencyDemo extends M3GBase {
-
         private Mesh cube1, cube2;
         private Camera camera;
         private Transform camT = new Transform();
-
         public TransparencyDemo() {
             super("Transparency");
             try {
@@ -364,7 +293,6 @@ public class CanvasDemos {
                 m1.setColor(Material.DIFFUSE, 0xFF0000);
                 ap1.setMaterial(m1);
                 cube1 = createCubeWithAppearance(1.0f, ap1);
-
                 Appearance ap2 = new Appearance();
                 CompositingMode cm2 = new CompositingMode();
                 cm2.setBlending(CompositingMode.ALPHA);
@@ -374,13 +302,11 @@ public class CanvasDemos {
                 m2.setColor(Material.DIFFUSE, 0x0000FF);
                 ap2.setMaterial(m2);
                 cube2 = createCubeWithAppearance(0.7f, ap2);
-
                 status = "two cubes alpha";
             } catch (Throwable t) {
                 status = "init failed: " + t;
             }
         }
-
         protected void paintM3G(Graphics3D g3d, int w, int h) throws Exception {
             if (cube1 == null) return;
             camera.setPerspective(60, (float) w / h, 1, 100);
@@ -397,10 +323,8 @@ public class CanvasDemos {
     }
 
     public static class PickingDemo extends M3GBase {
-
         private World world;
         private String pickInfo = "no pick";
-
         public PickingDemo() {
             super("Picking");
             try {
@@ -423,7 +347,6 @@ public class CanvasDemos {
                 status = "init failed: " + t;
             }
         }
-
         protected void pointerPressed(int x, int y) {
             if (world == null) return;
             try {
@@ -439,16 +362,323 @@ public class CanvasDemos {
                 pickInfo = "pick error " + t;
             }
         }
-
         protected void paintM3G(Graphics3D g3d, int w, int h) throws Exception {
             if (world == null) return;
             g3d.render(world);
         }
     }
 
-    /* ------------------------------------------------------------------ */
-    /* helpers to create cubes                                            */
-    /* ------------------------------------------------------------------ */
+    // ---- NEW VISUAL DEMOS ----
+
+    public static class FogDemo extends M3GBase {
+        private World world;
+        private Fog fog;
+        public FogDemo() {
+            super("Fog");
+            try {
+                world = new World();
+                Camera cam = new Camera();
+                cam.setPerspective(60, 1, 1, 50);
+                Transform ct = new Transform();
+                ct.postTranslate(0, 0, 10);
+                cam.setTransform(ct);
+                world.addChild(cam);
+                world.setActiveCamera(cam);
+                Background bg = new Background();
+                bg.setColor(0x8080A0);
+                world.setBackground(bg);
+                fog = new Fog();
+                fog.setColor(0x8080A0);
+                fog.setMode(Fog.LINEAR);
+                fog.setLinear(5, 20);
+                for (int i = 0; i < 5; i++) {
+                    Mesh cube = createCube(1.0f);
+                    Transform t = new Transform();
+                    t.postTranslate(0, 0, -i * 3);
+                    cube.setTransform(t);
+                    Appearance ap = new Appearance();
+                    ap.setFog(fog);
+                    cube.setAppearance(0, ap);
+                    world.addChild(cube);
+                }
+                status = "fog linear 5-20";
+            } catch (Throwable t) {
+                status = "init failed: " + t;
+            }
+        }
+        protected void paintM3G(Graphics3D g3d, int w, int h) throws Exception {
+            if (world == null) return;
+            float near = 5 + (float) Math.sin(frame * 0.05f) * 2;
+            fog.setLinear(near, 20);
+            g3d.render(world);
+        }
+    }
+
+    public static class LightingDemo extends M3GBase {
+        private Mesh cube;
+        private Camera camera;
+        private Transform camT = new Transform();
+        private Light[] lights = new Light[3];
+        private Transform[] lightT = new Transform[3];
+        public LightingDemo() {
+            super("Multi-light");
+            try {
+                camera = new Camera();
+                camera.setPerspective(60, 1, 1, 100);
+                camT.postTranslate(0, 0, 6);
+                for (int i = 0; i < 3; i++) {
+                    lights[i] = new Light();
+                    lights[i].setMode(i == 0 ? Light.DIRECTIONAL : (i == 1 ? Light.OMNI : Light.SPOT));
+                    lights[i].setColor(i == 0 ? 0xFF0000 : (i == 1 ? 0x00FF00 : 0x0000FF));
+                    lights[i].setIntensity(1.0f);
+                    lightT[i] = new Transform();
+                }
+                Appearance ap = new Appearance();
+                Material mat = new Material();
+                mat.setColor(Material.DIFFUSE, 0xFFFFFF);
+                mat.setColor(Material.SPECULAR, 0xFFFFFF);
+                mat.setShininess(20);
+                ap.setMaterial(mat);
+                cube = createCubeWithAppearance(1.5f, ap);
+                status = "3 lights RGB";
+            } catch (Throwable t) {
+                status = "init failed: " + t;
+            }
+        }
+        protected void paintM3G(Graphics3D g3d, int w, int h) throws Exception {
+            if (cube == null) return;
+            camera.setPerspective(60, (float) w / h, 1, 100);
+            g3d.setCamera(camera, camT);
+            for (int i = 0; i < 3; i++) {
+                lightT[i].setIdentity();
+                float angle = frame * (i + 1) * 0.05f;
+                lightT[i].postTranslate((float) Math.sin(angle) * 3, (float) Math.cos(angle) * 3, 2);
+                g3d.addLight(lights[i], lightT[i]);
+            }
+            Transform cubeT = new Transform();
+            cubeT.postRotate(frame, 0, 1, 0);
+            g3d.render(cube, cubeT);
+            g3d.resetLights();
+        }
+    }
+
+    public static class CompositingDemo extends M3GBase {
+        private Mesh[] cubes = new Mesh[4];
+        private Camera camera;
+        private Transform camT = new Transform();
+        public CompositingDemo() {
+            super("Blending modes");
+            try {
+                camera = new Camera();
+                camera.setPerspective(60, 1, 1, 100);
+                camT.postTranslate(0, 0, 8);
+                int[] modes = new int[]{CompositingMode.REPLACE, CompositingMode.ALPHA, CompositingMode.ALPHA_ADD, CompositingMode.MODULATE};
+                for (int i = 0; i < 4; i++) {
+                    Appearance ap = new Appearance();
+                    CompositingMode cm = new CompositingMode();
+                    cm.setBlending(modes[i]);
+                    ap.setCompositingMode(cm);
+                    Material mat = new Material();
+                    mat.setColor(Material.DIFFUSE, 0xFFFFFF);
+                    ap.setMaterial(mat);
+                    cubes[i] = createCubeWithAppearance(0.8f, ap);
+                }
+                status = "REPLACE,ALPHA,ADD,MODULATE";
+            } catch (Throwable t) {
+                status = "init failed: " + t;
+            }
+        }
+        protected void paintM3G(Graphics3D g3d, int w, int h) throws Exception {
+            camera.setPerspective(60, (float) w / h, 1, 100);
+            g3d.setCamera(camera, camT);
+            Light light = new Light();
+            light.setMode(Light.DIRECTIONAL);
+            g3d.addLight(light, new Transform());
+            for (int i = 0; i < 4; i++) {
+                Transform t = new Transform();
+                t.postTranslate((i - 1.5f) * 1.2f, (float) Math.sin(frame * 0.05f + i) * 0.5f, 0);
+                t.postRotate(frame + i * 20, 0, 1, 0);
+                g3d.render(cubes[i], t);
+            }
+            g3d.resetLights();
+        }
+    }
+
+    public static class BackgroundScrollDemo extends M3GBase {
+        private Background bg;
+        private Image2D image;
+        public BackgroundScrollDemo() {
+            super("Background scroll");
+            try {
+                javax.microedition.lcdui.Image img = javax.microedition.lcdui.Image.createImage(64, 64);
+                Graphics g = img.getGraphics();
+                for (int y = 0; y < 64; y++) {
+                    g.setColor((y * 4) << 16 | 0x00FF00);
+                    g.drawLine(0, y, 64, y);
+                }
+                image = new Image2D(Image2D.RGB, img);
+                bg = new Background();
+                bg.setColor(0x000000);
+                bg.setImage(image);
+                bg.setImageMode(Background.REPEAT, Background.REPEAT);
+                bg.setCrop(0, 0, 32, 32);
+                status = "scrolling bg";
+            } catch (Throwable t) {
+                status = "init failed: " + t;
+            }
+        }
+        protected void paintM3G(Graphics3D g3d, int w, int h) throws Exception {
+            if (bg == null) return;
+            int cx = (int) (frame % 64);
+            int cy = (int) ((frame * 0.7f) % 64);
+            bg.setCrop(cx, cy, 32 + (frame % 10), 32 + (frame % 10));
+            g3d.clear(bg);
+            // also render a small cube to test clear + render
+            Camera cam = new Camera();
+            cam.setParallel(2, 2, 1, 10);
+            Transform camT = new Transform();
+            camT.postTranslate(0, 0, 5);
+            g3d.setCamera(cam, camT);
+            Mesh cube = createCube(0.5f);
+            Transform t = new Transform();
+            t.postRotate(frame, 1, 1, 0);
+            g3d.render(cube, t);
+        }
+    }
+
+    public static class AnimationDemo extends M3GBase {
+        private Group group;
+        private Camera camera;
+        private Transform camT = new Transform();
+        private AnimationController ctrl;
+        private long startTime = System.currentTimeMillis();
+        public AnimationDemo() {
+            super("Animation");
+            try {
+                camera = new Camera();
+                camera.setPerspective(60, 1, 1, 100);
+                camT.postTranslate(0, 0, 8);
+                group = new Group();
+                Mesh cube = createCube(1.0f);
+                group.addChild(cube);
+                // Create simple translation animation
+                KeyframeSequence ks = new KeyframeSequence(3, 3, KeyframeSequence.LINEAR);
+                ks.setKeyframe(0, 0, new float[]{-2, 0, 0});
+                ks.setKeyframe(1, 1000, new float[]{2, 0, 0});
+                ks.setKeyframe(2, 2000, new float[]{-2, 0, 0});
+                ks.setDuration(2000);
+                ks.setRepeatMode(KeyframeSequence.LOOP);
+                AnimationTrack track = new AnimationTrack(ks, AnimationTrack.TRANSLATION);
+                ctrl = new AnimationController();
+                ctrl.setSpeed(1.0f, 0);
+                ctrl.setActiveInterval(0, 10000);
+                ctrl.setPosition(0, 0);
+                track.setController(ctrl);
+                group.addAnimationTrack(track);
+                status = "animated translation";
+            } catch (Throwable t) {
+                status = "init failed: " + t;
+            }
+        }
+        protected void paintM3G(Graphics3D g3d, int w, int h) throws Exception {
+            if (group == null) return;
+            camera.setPerspective(60, (float) w / h, 1, 100);
+            g3d.setCamera(camera, camT);
+            Light light = new Light();
+            light.setMode(Light.DIRECTIONAL);
+            g3d.addLight(light, new Transform());
+            int time = (int) (System.currentTimeMillis() - startTime);
+            group.animate(time);
+            g3d.render(group, new Transform());
+            g3d.resetLights();
+        }
+    }
+
+    public static class VertexColorDemo extends M3GBase {
+        private Mesh mesh;
+        private Camera camera;
+        private Transform camT = new Transform();
+        public VertexColorDemo() {
+            super("Vertex colors");
+            try {
+                camera = new Camera();
+                camera.setPerspective(60, 1, 1, 100);
+                camT.postTranslate(0, 0, 4);
+                VertexArray pos = new VertexArray(4, 3, 2);
+                short[] ps = new short[]{-1000,-1000,0, 1000,-1000,0, 1000,1000,0, -1000,1000,0};
+                pos.set(0, 4, ps);
+                VertexArray colors = new VertexArray(4, 3, 1);
+                byte[] cs = new byte[]{(byte)255,0,0, 0,(byte)255,0, 0,0,(byte)255, (byte)255,(byte)255,0};
+                colors.set(0, 4, cs);
+                VertexBuffer vb = new VertexBuffer();
+                vb.setPositions(pos, 0.001f, new float[]{0,0,0});
+                vb.setColors(colors);
+                IndexBuffer ib = new TriangleStripArray(new int[]{0,1,2,3}, new int[]{4});
+                Appearance ap = new Appearance();
+                PolygonMode pm = new PolygonMode();
+                pm.setShading(PolygonMode.SHADE_SMOOTH);
+                ap.setPolygonMode(pm);
+                mesh = new Mesh(vb, ib, ap);
+                status = "4 colored verts";
+            } catch (Throwable t) {
+                status = "init failed: " + t;
+            }
+        }
+        protected void paintM3G(Graphics3D g3d, int w, int h) throws Exception {
+            if (mesh == null) return;
+            camera.setPerspective(60, (float) w / h, 1, 100);
+            g3d.setCamera(camera, camT);
+            Transform t = new Transform();
+            t.postRotate(frame, 0, 0, 1);
+            g3d.render(mesh, t);
+        }
+    }
+
+    public static class MultipleViewportsDemo extends M3GBase {
+        private Mesh cube;
+        private Camera camera;
+        public MultipleViewportsDemo() {
+            super("Viewports");
+            try {
+                camera = new Camera();
+                camera.setPerspective(60, 1, 1, 100);
+                cube = createCube(1.0f);
+                status = "2 viewports";
+            } catch (Throwable t) {
+                status = "init failed: " + t;
+            }
+        }
+        protected void paintM3G(Graphics3D g3d, int w, int h) throws Exception {
+            if (cube == null) return;
+            // First viewport: left half
+            g3d.setViewport(0, 0, w/2, h);
+            Background bg1 = new Background();
+            bg1.setColor(0xFF0000);
+            g3d.clear(bg1);
+            Transform camT1 = new Transform();
+            camT1.postTranslate(0, 0, 5);
+            camera.setPerspective(60, (float)(w/2)/h, 1, 100);
+            g3d.setCamera(camera, camT1);
+            Transform t1 = new Transform();
+            t1.postRotate(frame, 1, 0, 0);
+            g3d.render(cube, t1);
+
+            // Second viewport: right half
+            g3d.setViewport(w/2, 0, w/2, h);
+            Background bg2 = new Background();
+            bg2.setColor(0x0000FF);
+            g3d.clear(bg2);
+            Transform camT2 = new Transform();
+            camT2.postTranslate(0, 0, 5);
+            g3d.setCamera(camera, camT2);
+            Transform t2 = new Transform();
+            t2.postRotate(-frame, 0, 1, 0);
+            g3d.render(cube, t2);
+
+            // Reset viewport
+            g3d.setViewport(0, 0, w, h);
+        }
+    }
 
     private static VertexBuffer createTriangleVB(float[] coords) {
         VertexArray pos = new VertexArray(3, 3, 2);
@@ -458,7 +688,7 @@ public class CanvasDemos {
         }
         pos.set(0, 3, s);
         VertexBuffer vb = new VertexBuffer();
-        vb.setPositions(pos, 0.001f, null);
+        vb.setPositions(pos, 0.001f, new float[]{0,0,0});
         return vb;
     }
 
@@ -479,8 +709,7 @@ public class CanvasDemos {
         }
         pos.set(0, 8, s);
         VertexBuffer vb = new VertexBuffer();
-        vb.setPositions(pos, 0.001f, null);
-
+        vb.setPositions(pos, 0.001f, new float[]{0,0,0});
         int[] indices = new int[]{
             0, 1, 2, 0, 2, 3,
             1, 5, 6, 1, 6, 2,
@@ -525,9 +754,8 @@ public class CanvasDemos {
         for (int i = 0; i < tex.length; i++) ts[i] = (short) (tex[i] * 1000);
         texArray.set(0, 24, ts);
         VertexBuffer vb = new VertexBuffer();
-        vb.setPositions(posArray, 0.001f, null);
-        vb.setTexCoords(0, texArray, 0.001f, null);
-
+        vb.setPositions(posArray, 0.001f, new float[]{0,0,0});
+        vb.setTexCoords(0, texArray, 0.001f, new float[]{0,0,0});
         int[] indices = new int[36];
         int idx = 0;
         for (int f = 0; f < 6; f++) {

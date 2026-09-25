@@ -38,7 +38,8 @@ public class Suites {
             new RayIntersectionSuite(),
             new Graphics3DSuite(),
             new LoaderSuite(),
-            new NodeSuite()
+            new NodeSuite(),
+            new EdgeCasesSuite()
         };
     }
 
