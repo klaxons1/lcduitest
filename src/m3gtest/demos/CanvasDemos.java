@@ -6,6 +6,9 @@ import javax.microedition.lcdui.Graphics;
 import javax.microedition.lcdui.Image;
 
 import javax.microedition.m3g.*;
+import javax.microedition.media.Manager;
+import javax.microedition.media.Player;
+import java.io.InputStream;
 
 public class CanvasDemos {
 
@@ -95,8 +98,8 @@ public class CanvasDemos {
         private float catX = 0, catZ = 0, catDirRad = 0;
         private float runCycle = 0;
 
-        // MIDI player
-        private Object midiPlayer; // avoid direct import if not available, use reflection via try
+        // MIDI player - direct MMAPI, no reflection (CLDC has no java.lang.reflect)
+        private Player midiPlayer;
         private boolean midiStarted = false;
 
         public CatGrassDemo() {
@@ -113,11 +116,8 @@ public class CanvasDemos {
 
         private void tryStartMidi() {
             try {
-                // Try to load /eon.mid or /res/eon.mid
-                java.io.InputStream is = null;
-                try {
-                    is = getClass().getResourceAsStream("/eon.mid");
-                } catch (Throwable t) {}
+                InputStream is = null;
+                try { is = getClass().getResourceAsStream("/eon.mid"); } catch (Throwable t) {}
                 if (is == null) {
                     try { is = getClass().getResourceAsStream("/res/eon.mid"); } catch (Throwable t) {}
                 }
@@ -125,19 +125,18 @@ public class CanvasDemos {
                     try { is = getClass().getResourceAsStream("eon.mid"); } catch (Throwable t) {}
                 }
                 if (is != null) {
-                    // Use reflection to avoid compile-time dependency if media not present
-                    Class managerClass = Class.forName("javax.microedition.media.Manager");
-                    java.lang.reflect.Method createPlayer = managerClass.getMethod("createPlayer", new Class[]{java.io.InputStream.class, String.class});
-                    Object player = createPlayer.invoke(null, new Object[]{is, "audio/midi"});
-                    Class playerClass = player.getClass();
-                    java.lang.reflect.Method setLoop = playerClass.getMethod("setLoopCount", new Class[]{Integer.TYPE});
-                    setLoop.invoke(player, new Object[]{new Integer(-1)});
-                    java.lang.reflect.Method start = playerClass.getMethod("start", new Class[0]);
-                    start.invoke(player, new Object[0]);
-                    midiPlayer = player;
-                    midiStatus = "midi: playing eon.mid (60 BPM warm pad)";
+                    Player p = Manager.createPlayer(is, "audio/midi");
+                    p.setLoopCount(-1);
+                    // try set volume if available
+                    try {
+                        javax.microedition.media.control.VolumeControl vc = (javax.microedition.media.control.VolumeControl) p.getControl("VolumeControl");
+                        if (vc != null) vc.setLevel(80);
+                    } catch (Throwable ignore) {}
+                    p.start();
+                    midiPlayer = p;
+                    midiStatus = "midi: playing eon.mid calm 60 BPM";
                 } else {
-                    midiStatus = "midi: eon.mid not found in jar (put in res/)";
+                    midiStatus = "midi: eon.mid not found (put in jar root)";
                 }
             } catch (Throwable t) {
                 midiStatus = "midi: not supported - " + t.toString();
@@ -882,8 +881,7 @@ public class CanvasDemos {
             animator = null;
             try {
                 if (midiPlayer != null) {
-                    Class pc = midiPlayer.getClass();
-                    pc.getMethod("stop", new Class[0]).invoke(midiPlayer, new Object[0]);
+                    midiPlayer.stop();
                 }
             } catch (Throwable t) {}
         }
