@@ -1,5 +1,5 @@
 /**
- * M3GTester - MIDP 2.0 M3G conformance test MIDlet.
+ * LcduiTest - MIDP 2.0 LCDUI conformance test MIDlet.
  *
  * Helpers that let a test case talk to the Display. MIDlet suites run on a
  * background thread (the MIDP event thread must stay free so that callSerially
@@ -12,10 +12,10 @@
  */
 package m3gtest;
 
-import javax.microedition.M3G.Canvas;
-import javax.microedition.M3G.Display;
-import javax.microedition.M3G.Displayable;
-import javax.microedition.M3G.Image;
+import javax.microedition.lcdui.Canvas;
+import javax.microedition.lcdui.Display;
+import javax.microedition.lcdui.Displayable;
+import javax.microedition.lcdui.Image;
 import javax.microedition.midlet.MIDlet;
 
 public class Ui {

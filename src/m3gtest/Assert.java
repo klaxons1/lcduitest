@@ -1,12 +1,11 @@
-/*
+/**
  * M3G Tester - Assertion helpers
  */
 package m3gtest;
 
 public class Assert {
 
-    private Assert() {
-    }
+    private Assert() {}
 
     public interface Code {
         void run() throws Exception;

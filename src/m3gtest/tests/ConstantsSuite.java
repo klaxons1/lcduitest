@@ -43,17 +43,16 @@ public class ConstantsSuite extends TestSuite {
                 Assert.assertTrue("CULL_FRONT", PolygonMode.CULL_FRONT >= 0);
             }
         });
-        add(new TestCase("VertexArray types") {
+        add(new TestCase("VertexArray component size") {
             public void run() {
-                Assert.assertTrue("BYTE", VertexArray.BYTE >= 0);
-                Assert.assertTrue("SHORT", VertexArray.SHORT >= 0);
-                Assert.assertTrue("FIXED", VertexArray.FIXED >= 0);
-                Assert.assertTrue("FLOAT", VertexArray.FLOAT >= 0);
+                VertexArray va = new VertexArray(3, 3, 2);
+                Assert.assertEquals("vertex count", 3, va.getVertexCount());
+                Assert.assertEquals("component count", 3, va.getComponentCount());
+                Assert.assertEquals("component type", 2, va.getComponentType());
             }
         });
         add(new TestCase("Transform constants") {
             public void run() {
-                // Just ensure class loads and has methods
                 Transform t = new Transform();
                 Assert.assertNotNull("Transform", t);
             }

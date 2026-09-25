@@ -26,9 +26,10 @@ public class SkinnedMeshSuite extends TestSuite {
         add(new TestCase("getBoneTransform") {
             public void run() {
                 SkinnedMesh sm = createSkinned();
+                Group skeleton = sm.getSkeleton();
+                Node bone = skeleton.getChild(0);
                 Transform t = new Transform();
-                sm.getBoneTransform(0, t);
-                // Should not throw
+                sm.getBoneTransform(bone, t);
                 Assert.assertNotNull("transform", t);
             }
         });
@@ -36,10 +37,30 @@ public class SkinnedMeshSuite extends TestSuite {
         add(new TestCase("getBoneVertices") {
             public void run() {
                 SkinnedMesh sm = createSkinned();
-                int[] indices = new int[3];
-                float[] weights = new float[3];
-                int count = sm.getBoneVertices(0, indices, weights);
+                Group skeleton = sm.getSkeleton();
+                Node bone = skeleton.getChild(0);
+                int[] indices = new int[10];
+                float[] weights = new float[10];
+                int count = sm.getBoneVertices(bone, indices, weights);
                 Assert.assertTrue("count >=0", count >= 0);
+            }
+        });
+
+        add(new TestCase("addTransform") {
+            public void run() {
+                VertexArray pos = new VertexArray(3, 3, 2);
+                short[] s = new short[]{0,0,0, 1000,0,0, 0,1000,0};
+                pos.set(0, 3, s);
+                VertexBuffer vb = new VertexBuffer();
+                vb.setPositions(pos, 0.001f, null);
+                IndexBuffer ib = new TriangleStripArray(0, new int[]{3});
+                Appearance ap = new Appearance();
+                Group skeleton = new Group();
+                Group bone = new Group();
+                skeleton.addChild(bone);
+                SkinnedMesh sm = new SkinnedMesh(vb, ib, ap, skeleton);
+                sm.addTransform(bone, 1, 0, 1);
+                Assert.assertTrue("addTransform ok", true);
             }
         });
     }
@@ -57,10 +78,8 @@ public class SkinnedMeshSuite extends TestSuite {
         Group bone = new Group();
         skeleton.addChild(bone);
 
-        int[] indices = new int[]{0,0,0};
-        float[] weights = new float[]{1.0f,1.0f,1.0f};
         SkinnedMesh sm = new SkinnedMesh(vb, ib, ap, skeleton);
-        sm.addTransform(bone, weights.length, indices, weights);
+        sm.addTransform(bone, 1, 0, 3);
         return sm;
     }
 }

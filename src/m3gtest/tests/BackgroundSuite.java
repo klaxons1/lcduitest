@@ -39,9 +39,11 @@ public class BackgroundSuite extends TestSuite {
         add(new TestCase("setImageMode") {
             public void run() {
                 Background bg = new Background();
-                bg.setImageMode(Background.BORDER);
-                Assert.assertEquals("mode", Background.BORDER, bg.getImageModeX());
+                bg.setImageMode(Background.BORDER, Background.BORDER);
+                Assert.assertEquals("modeX", Background.BORDER, bg.getImageModeX());
                 Assert.assertEquals("modeY", Background.BORDER, bg.getImageModeY());
+                bg.setImageMode(Background.REPEAT, Background.REPEAT);
+                Assert.assertEquals("mode REPEAT", Background.REPEAT, bg.getImageModeX());
             }
         });
 
@@ -52,6 +54,14 @@ public class BackgroundSuite extends TestSuite {
                 Assert.assertTrue("color clear", bg.isColorClearEnabled());
                 bg.setColorClearEnable(false);
                 Assert.assertFalse("color clear false", bg.isColorClearEnabled());
+            }
+        });
+
+        add(new TestCase("isDepthClearEnabled") {
+            public void run() {
+                Background bg = new Background();
+                bg.setDepthClearEnable(true);
+                Assert.assertTrue("depth clear", bg.isDepthClearEnabled());
             }
         });
     }

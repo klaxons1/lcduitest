@@ -1,5 +1,5 @@
 /**
- * M3GTester - MIDP 2.0 M3G conformance test MIDlet.
+ * LcduiTest - MIDP 2.0 LCDUI conformance test MIDlet.
  *
  * Collects the outcome of a run, prints it in a machine readable form on the
  * standard output (this is what the headless CI harness parses) and keeps a
@@ -16,8 +16,8 @@ import javax.microedition.rms.RecordStoreException;
 
 public class Results {
 
-    public static final String TAG = "[M3GTEST]";
-    public static final String STORE_NAME = "m3gtest-results";
+    public static final String TAG = "[LCDUITEST]";
+    public static final String STORE_NAME = "lcduitest-results";
     public static final int FORMAT_VERSION = 1;
 
     /** One executed suite. */
@@ -229,7 +229,7 @@ public class Results {
                 // no store yet
             }
             store = RecordStore.openRecordStore(STORE_NAME, true);
-            addRecord(store, "M3GTEST|" + FORMAT_VERSION
+            addRecord(store, "LCDUITEST|" + FORMAT_VERSION
                     + "|" + System.currentTimeMillis()
                     + "|" + escape(platform)
                     + "|" + total() + "|" + passed() + "|" + failed() + "|" + errors() + "|" + infos());

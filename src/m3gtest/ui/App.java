@@ -1,350 +1,541 @@
+/**
+ * M3G Tester - Application shell: menu tree, test execution, progress display, result
+ * browser and visual demos.
+ *
+ * Based on lcduitest.ui.App but adapted for M3G suites (no categories).
+ */
 package m3gtest.ui;
 
-import javax.microedition.lcdui.*;
+import java.util.Vector;
+
+import javax.microedition.lcdui.Alert;
+import javax.microedition.lcdui.AlertType;
+import javax.microedition.lcdui.Canvas;
+import javax.microedition.lcdui.Command;
+import javax.microedition.lcdui.CommandListener;
+import javax.microedition.lcdui.Display;
+import javax.microedition.lcdui.Displayable;
+import javax.microedition.lcdui.Form;
+import javax.microedition.lcdui.Gauge;
+import javax.microedition.lcdui.List;
+import javax.microedition.lcdui.StringItem;
+import javax.microedition.lcdui.TextBox;
 import javax.microedition.midlet.MIDlet;
 
-import m3gtest.*;
+import m3gtest.Env;
+import m3gtest.ExitHook;
+import m3gtest.Results;
+import m3gtest.Suites;
+import m3gtest.TestCase;
+import m3gtest.TestResult;
+import m3gtest.TestRunner;
+import m3gtest.TestSuite;
+import m3gtest.Ui;
 import m3gtest.demos.Demos;
 
-public class App extends MIDlet implements ExitHook, CommandListener, TestRunner.Listener {
+public class App implements CommandListener {
 
-    private Display display;
-    private List mainMenu;
-    private List suiteList;
-    private Form envForm;
-    private Form resultForm;
-    private List resultsList;
-    private Results results = new Results();
+    private static final int LIST_SUITES = 1;
+    private static final int LIST_DEMOS = 2;
+    private static final int LIST_SUITE_RESULTS = 3;
+    private static final int LIST_TEST_RESULTS = 4;
+
+    private final MIDlet midlet;
+    private final ExitHook exitHook;
+    private final Display display;
+
+    private final List mainMenu = new List("M3G Tester", List.IMPLICIT);
+    private final List listScreen = new List("", List.IMPLICIT);
+    private int listKind = LIST_SUITES;
+    private Canvas canvasScreen;
+    private final Form progressForm = new Form("Running");
+    private final Gauge progressGauge = new Gauge("progress", false, 100, 0);
+    private final StringItem progressItem = new StringItem("", "");
+    private final Form detailForm = new Form("Test detail");
+
+    private final Command backCommand = new Command("Back", Command.BACK, 2);
+    private final Command okCommand = new Command("Select", Command.OK, 1);
+    private final Command stopCommand = new Command("Stop", Command.STOP, 1);
+    private final Command rerunCommand = new Command("Run again", Command.SCREEN, 3);
+    private final Command runAllCommand = new Command("Run ALL", Command.SCREEN, 4);
+    private final Command saveCommand = new Command("Save report", Command.SCREEN, 5);
+
+    private Displayable previous;
+    private TestSuite[] allSuites;
+
+    private Results results;
     private TestRunner runner;
-    private Thread runThread;
-    private boolean autoExit;
-    private String autoSuiteId;
-    private int autoRepeat;
+    private final Vector suiteRuns = new Vector();
+    private Results.SuiteRun selectedSuiteRun;
+    private TestResult selectedResult;
+    private boolean runningSingle;
 
-    private static final Command CMD_SELECT = new Command("Select", Command.OK, 1);
-    private static final Command CMD_BACK = new Command("Back", Command.BACK, 2);
-    private static final Command CMD_EXIT = new Command("Exit", Command.EXIT, 10);
-    private static final Command CMD_RUN_ALL = new Command("Run all", Command.SCREEN, 1);
-    private static final Command CMD_DETAILS = new Command("Details", Command.SCREEN, 2);
-    private static final Command CMD_STOP = new Command("Stop", Command.STOP, 1);
-
-    public App() {
-        display = Display.getDisplay(this);
-        Ui.init(display);
+    public App(MIDlet midlet, ExitHook exitHook) {
+        this.midlet = midlet;
+        this.exitHook = exitHook;
+        this.display = Display.getDisplay(midlet);
+        Ui.init(midlet);
+        progressForm.append(progressGauge);
+        progressForm.append(progressItem);
+        progressForm.addCommand(stopCommand);
+        progressForm.setCommandListener(this);
     }
 
-    protected void startApp() {
-        String arg = getAppProperty("M3GTester-AutoRun");
-        if (arg == null) {
-            arg = getAppProperty("autorun");
+    public void start() {
+        int tests = 0;
+        TestSuite[] all = Suites.all();
+        allSuites = all;
+        for (int i = 0; i < all.length; i++) {
+            tests += all[i].size();
         }
-        if (arg != null && arg.length() > 0) {
-            autoExit = true;
-            parseAutoArg(arg);
-            startAutorun();
-            return;
+        mainMenu.deleteAll();
+        mainMenu.append("Run ALL (" + tests + " tests)", null);
+        mainMenu.append("Choose suite (" + all.length + ")", null);
+        mainMenu.append("Visual demos (" + Demos.titles().length + ")", null);
+        mainMenu.append("Environment", null);
+        mainMenu.append("Last stored run", null);
+        mainMenu.append("Help / about", null);
+        mainMenu.addCommand(okCommand);
+        mainMenu.setCommandListener(this);
+        display.setCurrent(mainMenu);
+        String autorun = null;
+        try {
+            autorun = midlet.getAppProperty("M3GTester-AutoRun");
+            if (autorun == null) autorun = midlet.getAppProperty("autorun");
+        } catch (Throwable t) {}
+        if (autorun == null) autorun = System.getProperty("m3gtest.autorun");
+        if (autorun != null && autorun.length() > 0 && !autorun.equals("false") && !autorun.equals("0")) {
+            runSuites(all, "ALL suites", true);
         }
-        showMainMenu();
     }
 
-    protected void pauseApp() {}
+    public void pause() {}
 
-    protected void destroyApp(boolean unconditional) {
+    public void destroy() {
         if (runner != null) {
             runner.cancel();
         }
-        if (runThread != null) {
-            runThread.interrupt();
+    }
+
+    private void go(Displayable displayable) {
+        Displayable current = display.getCurrent();
+        if (current != null && current != displayable) {
+            previous = current;
+        }
+        display.setCurrent(displayable);
+    }
+
+    private void goBack() {
+        if (previous != null) {
+            Displayable target = previous;
+            previous = null;
+            display.setCurrent(target);
+        } else {
+            display.setCurrent(mainMenu);
         }
     }
 
-    public void requestExit() {
-        if (autoExit) {
-            try {
-                destroyApp(true);
-                notifyDestroyed();
-            } catch (Throwable t) {}
-        }
-    }
-
-    private void parseAutoArg(String arg) {
-        arg = arg.trim().toLowerCase();
-        if (arg.equals("all") || arg.equals("*")) {
-            autoSuiteId = null;
-            return;
-        }
-        int colon = arg.indexOf(':');
-        if (colon >= 0) {
-            try {
-                autoRepeat = Integer.parseInt(arg.substring(colon + 1).trim());
-            } catch (Exception e) {
-                autoRepeat = 0;
-            }
-            arg = arg.substring(0, colon).trim();
-        }
-        autoSuiteId = arg;
-    }
-
-    private void showMainMenu() {
-        if (mainMenu == null) {
-            mainMenu = new List("M3G Tester", List.IMPLICIT);
-            mainMenu.append("Run all tests", null);
-            mainMenu.append("Choose suite", null);
-            mainMenu.append("Environment", null);
-            mainMenu.append("Results", null);
-            mainMenu.append("Visual demos", null);
-            mainMenu.append("Exit", null);
-            mainMenu.addCommand(CMD_EXIT);
-            mainMenu.setCommandListener(this);
-        }
-        display.setCurrent(mainMenu);
-    }
-
-    private void showSuiteList() {
-        suiteList = new List("Suites", List.IMPLICIT);
+    private void showSuites() {
+        listKind = LIST_SUITES;
+        listScreen.setTitle("Suites");
+        listScreen.deleteAll();
+        listScreen.removeCommand(runAllCommand);
+        listScreen.removeCommand(saveCommand);
         TestSuite[] suites = Suites.all();
         for (int i = 0; i < suites.length; i++) {
-            suiteList.append(suites[i].getTitle() + " (" + suites[i].size() + ")", null);
+            TestSuite suite = suites[i];
+            listScreen.append(suite.getTitle() + " [" + suite.size() + "]", null);
         }
-        suiteList.addCommand(CMD_BACK);
-        suiteList.setCommandListener(this);
-        display.setCurrent(suiteList);
-    }
-
-    private void showEnv() {
-        if (envForm == null) {
-            envForm = new Form("Environment");
-            envForm.append(new Env(this).describe());
-            envForm.addCommand(CMD_BACK);
-            envForm.setCommandListener(this);
-        }
-        display.setCurrent(envForm);
-    }
-
-    private void showResults() {
-        resultsList = new List("Results", List.IMPLICIT);
-        if (results.isEmpty()) {
-            resultsList.append("(no results yet)", null);
-        } else {
-            resultsList.append("Total: " + results.total() + " Passed: " + results.passed() + " Failed: " + results.failed(), null);
-            for (int i = 0; i < results.suiteCount(); i++) {
-                Results.SuiteRun sr = results.suiteRun(i);
-                Results.Stats st = sr.stats;
-                resultsList.append(sr.suite.getTitle() + " " + st.passed + "/" + st.total + (st.failed > 0 ? " FAIL" : " OK"), null);
-            }
-        }
-        resultsList.addCommand(CMD_BACK);
-        resultsList.addCommand(CMD_DETAILS);
-        resultsList.setCommandListener(this);
-        display.setCurrent(resultsList);
-    }
-
-    private void showResultDetails() {
-        StringBuffer sb = new StringBuffer();
-        sb.append("Platform: ").append(results.getPlatform()).append("\n");
-        sb.append("Time: ").append(results.getMillis()).append(" ms\n");
-        sb.append("Total: ").append(results.total()).append(" Passed: ").append(results.passed()).append(" Failed: ").append(results.failed()).append("\n\n");
-        for (int i = 0; i < results.suiteCount(); i++) {
-            Results.SuiteRun sr = results.suiteRun(i);
-            sb.append("[").append(sr.suite.getId()).append("] ").append(sr.suite.getTitle()).append("\n");
-            for (int j = 0; j < sr.results.size(); j++) {
-                TestResult tr = (TestResult) sr.results.elementAt(j);
-                sb.append(" ").append(tr.getMark()).append(" ").append(tr.getName());
-                if (tr.isFailure()) {
-                    sb.append(" -> ").append(tr.getMessage());
-                }
-                sb.append("\n");
-            }
-            sb.append("\n");
-        }
-        resultForm = new Form("Report");
-        resultForm.append(sb.toString());
-        resultForm.addCommand(CMD_BACK);
-        resultForm.setCommandListener(this);
-        display.setCurrent(resultForm);
+        listScreen.addCommand(backCommand);
+        listScreen.addCommand(okCommand);
+        listScreen.addCommand(runAllCommand);
+        listScreen.setCommandListener(this);
+        go(listScreen);
     }
 
     private void showDemos() {
-        List demoList = new List("Visual demos", List.IMPLICIT);
         String[] titles = Demos.titles();
+        listKind = LIST_DEMOS;
+        listScreen.setTitle("Visual demos");
+        listScreen.deleteAll();
+        listScreen.removeCommand(runAllCommand);
+        listScreen.removeCommand(saveCommand);
         for (int i = 0; i < titles.length; i++) {
-            demoList.append(titles[i], null);
+            listScreen.append(titles[i], null);
         }
-        demoList.addCommand(CMD_BACK);
-        final List dl = demoList;
-        demoList.setCommandListener(new CommandListener() {
-            public void commandAction(Command c, Displayable d) {
-                if (c == List.SELECT_COMMAND) {
-                    int idx = dl.getSelectedIndex();
-                    Displayable demo = Demos.create(idx);
-                    if (demo != null) {
-                        demo.addCommand(CMD_BACK);
-                        demo.setCommandListener(new CommandListener() {
-                            public void commandAction(Command cmd, Displayable disp) {
-                                if (cmd == CMD_BACK) {
-                                    display.setCurrent(dl);
-                                }
-                            }
-                        });
-                        display.setCurrent(demo);
-                    }
-                } else if (c == CMD_BACK) {
-                    showMainMenu();
+        listScreen.addCommand(backCommand);
+        listScreen.addCommand(okCommand);
+        listScreen.setCommandListener(this);
+        go(listScreen);
+    }
+
+    private void showText(String title, String text) {
+        TextBox box = new TextBox(title, text, 8192, 0);
+        box.addCommand(backCommand);
+        box.setCommandListener(this);
+        go(box);
+    }
+
+    private void showEnvironment() {
+        showText("Environment", new Env(midlet).describe());
+    }
+
+    private void showHelp() {
+        StringBuffer sb = new StringBuffer();
+        sb.append("M3G conformance test MIDlet for JSR-184.\n\n");
+        sb.append("Every menu entry runs a group of test cases that exercises the "
+                + "javax.microedition.m3g API against the M3G 1.1 specification.\n\n");
+        sb.append("Marks in the result list:\n");
+        sb.append("  +  pass\n");
+        sb.append("  x  failure (specification violated)\n");
+        sb.append("  !  error (unexpected exception)\n");
+        sb.append("  i  observation\n");
+        sb.append("  M  manual test\n\n");
+        sb.append("Automated (CI) mode: start the MIDlet with\n");
+        sb.append("  M3GTester-AutoRun=true\n");
+        sb.append("to run everything, print a machine readable log on stdout and store "
+                + "the summary in the RecordStore. Add M3GTester-Exit=true to shut down when over.\n");
+        showText("Help / about", sb.toString());
+    }
+
+    private void showLastStoredRun() {
+        Vector lines = Results.loadSummary();
+        StringBuffer sb = new StringBuffer();
+        for (int i = 0; i < lines.size(); i++) {
+            sb.append(lines.elementAt(i)).append('\n');
+        }
+        if (sb.length() == 0) {
+            sb.append("no stored run\n\n(run a test group with m3gtest.store=true "
+                    + "or use 'Save report' on the result screen)");
+        }
+        showText("Last stored run", sb.toString());
+    }
+
+    private void runAll(boolean auto) {
+        runSuites(Suites.all(), "ALL suites", auto);
+    }
+
+    private void runSuites(TestSuite[] suites, String title, boolean auto) {
+        if (runner != null) {
+            runner.cancel();
+        }
+        results = new Results();
+        suiteRuns.removeAllElements();
+        int total = 0;
+        for (int i = 0; i < suites.length; i++) {
+            total += suites[i].size();
+        }
+        progressGauge.setMaxValue(total);
+        progressGauge.setValue(0);
+        progressItem.setText("0 / " + total + "  " + title);
+        progressForm.setTitle(title);
+        runner = new TestRunner(new SessionListener());
+        Ui.display().setCurrent(progressForm);
+        previous = mainMenu;
+        Thread thread = new Thread(new Session(suites, auto));
+        thread.start();
+    }
+
+    private class Session implements Runnable {
+        private final TestSuite[] suites;
+        private final boolean auto;
+        Session(TestSuite[] suites, boolean auto) {
+            this.suites = suites;
+            this.auto = auto;
+        }
+        public void run() {
+            results.announceBegin();
+            for (int i = 0; i < suites.length; i++) {
+                TestRunner active = runner;
+                if (active == null || active.isCancelled()) {
+                    break;
                 }
+                active.run(suites[i]);
+            }
+            results.finish();
+            results.announceEnd();
+            if (Env.flag("m3gtest.store")) {
+                results.save();
+            }
+            // autorun stdout report
+            try {
+                System.out.println("M3GTester autorun finished: total=" + results.total()
+                        + " passed=" + results.passed() + " failed=" + results.failed()
+                        + " errors=" + results.errors() + " millis=" + results.getMillis());
+                for (int i = 0; i < suiteRuns.size(); i++) {
+                    Results.SuiteRun sr = (Results.SuiteRun) suiteRuns.elementAt(i);
+                    System.out.println("SUITE " + sr.suite.getId() + " " + sr.stats.passed + "/" + sr.stats.total
+                            + " failed=" + sr.stats.failed + " errors=" + sr.stats.errors);
+                    for (int j = 0; j < sr.testResults.size(); j++) {
+                        TestResult tr = (TestResult) sr.testResults.elementAt(j);
+                        if (tr.isFailure()) {
+                            System.out.println("FAIL " + sr.suite.getId() + "." + tr.getName() + " -> " + tr.getMessage());
+                        }
+                    }
+                }
+            } catch (Throwable t) {}
+            display.callSerially(new Runnable() {
+                public void run() {
+                    showRunResults();
+                    if (auto) {
+                        boolean shouldExit = false;
+                        try {
+                            String v = midlet.getAppProperty("M3GTester-Exit");
+                            if (v == null) v = midlet.getAppProperty("exit");
+                            if (v == null) v = System.getProperty("m3gtest.exit");
+                            shouldExit = v != null && v.length() > 0 && !v.equals("false") && !v.equals("0");
+                        } catch (Throwable t) {}
+                        if (shouldExit) {
+                            exitHook.requestExit();
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    private class SessionListener implements TestRunner.Listener {
+        private Results.SuiteRun currentRun;
+        private int executed;
+        public void suiteStarted(final TestSuite suite, int total) {
+            currentRun = new Results.SuiteRun(suite, new TestRunner.SuiteResult());
+            currentRun.stats.total = total;
+            suiteRuns.addElement(currentRun);
+            display.callSerially(new Runnable() {
+                public void run() {
+                    progressForm.setTitle(suite.getId());
+                }
+            });
+        }
+        public void testFinished(TestSuite suite, TestCase test, TestResult result) {
+            currentRun.testResults.addElement(result);
+            executed++;
+            final int done = executed;
+            final String text = result.getStatusText() + " " + test.getName();
+            display.callSerially(new Runnable() {
+                public void run() {
+                    progressGauge.setValue(done);
+                    progressItem.setText(done + " / " + progressGauge.getMaxValue() + "  " + text);
+                }
+            });
+            Results.announceTest(suite.getId(), result);
+        }
+        public void suiteFinished(TestSuite suite, TestRunner.SuiteResult stats) {
+            Results.SuiteRun run = currentRun;
+            run.stats.total = stats.total;
+            run.stats.passed = stats.passed;
+            run.stats.failed = stats.failed;
+            run.stats.errors = stats.errors;
+            run.stats.infos = stats.infos;
+            run.stats.millis = stats.millis;
+            Results.announceSuite(run);
+        }
+    }
+
+    private void showRunResults() {
+        if (results == null || suiteRuns.size() == 0) {
+            display.setCurrent(mainMenu);
+            return;
+        }
+        listKind = LIST_SUITE_RESULTS;
+        listScreen.setTitle(results.verdict());
+        listScreen.deleteAll();
+        for (int i = 0; i < suiteRuns.size(); i++) {
+            Results.SuiteRun run = (Results.SuiteRun) suiteRuns.elementAt(i);
+            String title = run.suite.getId() + ": " + run.stats.passed + "/" + run.stats.total;
+            if (run.failures() > 0) {
+                title = title + "  fail=" + run.failures();
+            }
+            listScreen.append(title, null);
+        }
+        listScreen.removeCommand(runAllCommand);
+        listScreen.removeCommand(saveCommand);
+        listScreen.addCommand(backCommand);
+        listScreen.addCommand(okCommand);
+        listScreen.addCommand(runAllCommand);
+        listScreen.addCommand(saveCommand);
+        listScreen.setCommandListener(this);
+        display.setCurrent(listScreen);
+        previous = mainMenu;
+    }
+
+    private void showSuiteRunResults(int index) {
+        selectedSuiteRun = (Results.SuiteRun) suiteRuns.elementAt(index);
+        listKind = LIST_TEST_RESULTS;
+        listScreen.setTitle(selectedSuiteRun.suite.getId() + ": "
+                + selectedSuiteRun.stats.passed + "/" + selectedSuiteRun.stats.total);
+        listScreen.deleteAll();
+        for (int i = 0; i < selectedSuiteRun.testResults.size(); i++) {
+            TestResult result = (TestResult) selectedSuiteRun.testResults.elementAt(i);
+            listScreen.append(mark(result) + " " + result.getName(), null);
+        }
+        listScreen.removeCommand(runAllCommand);
+        listScreen.removeCommand(saveCommand);
+        listScreen.addCommand(backCommand);
+        listScreen.addCommand(okCommand);
+        listScreen.setCommandListener(this);
+        go(listScreen);
+    }
+
+    private static String mark(TestResult result) {
+        if (result.isFailure()) {
+            return result.getStatus() == TestResult.ERROR ? "!" : "x";
+        }
+        if (result.getStatus() == TestResult.INFO) {
+            return result.getSeverity() == TestCase.MANUAL ? "M" : "i";
+        }
+        return "+";
+    }
+
+    private void showTestDetail(int index) {
+        if (selectedSuiteRun == null || index < 0 || index >= selectedSuiteRun.testResults.size()) {
+            return;
+        }
+        selectedResult = (TestResult) selectedSuiteRun.testResults.elementAt(index);
+        detailForm.deleteAll();
+        detailForm.removeCommand(rerunCommand);
+        detailForm.removeCommand(backCommand);
+        if (selectedResult.getSeverity() == TestCase.MANUAL
+                || selectedResult.getSeverity() == TestCase.INFO) {
+            detailForm.addCommand(rerunCommand);
+        }
+        detailForm.addCommand(backCommand);
+        detailForm.setCommandListener(this);
+        fillDetail(selectedResult);
+        go(detailForm);
+    }
+
+    private void fillDetail(TestResult result) {
+        detailForm.setTitle("Test detail");
+        detailForm.append(new StringItem("status", result.getStatusText()
+                + " (" + Results.severityName(result.getSeverity())
+                + ", " + result.getMillis() + " ms)"));
+        if (selectedSuiteRun != null) {
+            detailForm.append(new StringItem("suite", selectedSuiteRun.suite.getId()));
+        }
+        detailForm.append(new StringItem("test", result.getName()));
+        if (result.getTest().getDescription().length() > 0) {
+            detailForm.append(new StringItem("checks", result.getTest().getDescription()));
+        }
+        detailForm.append(new StringItem("result", result.getMessage() == null ? "-" : result.getMessage()));
+    }
+
+    private void rerun(final TestCase test) {
+        detailForm.setTitle("Running...");
+        runningSingle = true;
+        Thread thread = new Thread(new Runnable() {
+            public void run() {
+                final TestResult fresh = TestRunner.execute(test);
+                Results.announceTest("single", fresh);
+                display.callSerially(new Runnable() {
+                    public void run() {
+                        runningSingle = false;
+                        detailForm.deleteAll();
+                        fillDetail(fresh);
+                    }
+                });
             }
         });
-        display.setCurrent(demoList);
+        thread.start();
+    }
+
+    private static String describe(TestCase test, TestResult result) {
+        StringBuffer sb = new StringBuffer();
+        sb.append("status:   ").append(result.getStatusText()).append('\n');
+        sb.append("severity: ").append(Results.severityName(test.getSeverity())).append('\n');
+        sb.append("time:     ").append(result.getMillis()).append(" ms\n");
+        if (test.getDescription().length() > 0) {
+            sb.append("\nchecks: ").append(test.getDescription()).append('\n');
+        }
+        if (result.getMessage() != null) {
+            sb.append("\n").append(result.getMessage()).append('\n');
+        }
+        return sb.toString();
     }
 
     public void commandAction(Command c, Displayable d) {
-        if (d == mainMenu) {
-            if (c == CMD_EXIT || (c == List.SELECT_COMMAND && mainMenu.getSelectedIndex() == 5)) {
-                destroyApp(true);
-                notifyDestroyed();
-            } else if (c == List.SELECT_COMMAND) {
-                int idx = mainMenu.getSelectedIndex();
-                if (idx == 0) {
-                    startRun(null);
-                } else if (idx == 1) {
-                    showSuiteList();
-                } else if (idx == 2) {
-                    showEnv();
-                } else if (idx == 3) {
-                    showResults();
-                } else if (idx == 4) {
-                    showDemos();
-                }
-            } else if (c == CMD_EXIT) {
-                destroyApp(true);
-                notifyDestroyed();
-            }
-        } else if (d == suiteList) {
-            if (c == CMD_BACK) {
-                showMainMenu();
-            } else if (c == List.SELECT_COMMAND) {
-                int idx = suiteList.getSelectedIndex();
-                TestSuite[] suites = Suites.all();
-                if (idx >= 0 && idx < suites.length) {
-                    startRun(suites[idx]);
-                }
-            }
-        } else if (d == envForm) {
-            if (c == CMD_BACK) {
-                showMainMenu();
-            }
-        } else if (d == resultsList) {
-            if (c == CMD_BACK) {
-                showMainMenu();
-            } else if (c == CMD_DETAILS) {
-                showResultDetails();
-            }
-        } else if (d == resultForm) {
-            if (c == CMD_BACK) {
-                showResults();
-            }
-        }
-    }
-
-    private void startRun(final TestSuite singleSuite) {
-        if (runThread != null && runThread.isAlive()) {
+        if (c == backCommand) {
+            goBack();
             return;
         }
-        final Form progress = new Form("Running");
-        final StringItem status = new StringItem(null, "Starting...");
-        progress.append(status);
-        progress.addCommand(CMD_STOP);
-        progress.setCommandListener(new CommandListener() {
-            public void commandAction(Command cmd, Displayable disp) {
-                if (cmd == CMD_STOP) {
-                    if (runner != null) {
-                        runner.cancel();
-                    }
-                }
+        if (c == stopCommand) {
+            if (runner != null) {
+                runner.cancel();
             }
-        });
-        display.setCurrent(progress);
-        results = new Results();
-        runner = new TestRunner(this);
-        runThread = new Thread(new Runnable() {
-            public void run() {
-                try {
-                    if (singleSuite != null) {
-                        runner.run(singleSuite);
-                    } else {
-                        TestSuite[] suites = Suites.all();
-                        for (int i = 0; i < suites.length; i++) {
-                            if (runner.isCancelled()) break;
-                            runner.run(suites[i]);
-                        }
-                    }
-                } finally {
-                    results = runner.getResults();
-                    Ui.callSeriallyAndWait(new Runnable() {
-                        public void run() {
-                            showResults();
-                        }
-                    }, 5000);
-                }
+            showRunResults();
+            return;
+        }
+        if (c == runAllCommand) {
+            runAll(false);
+            return;
+        }
+        if (c == saveCommand) {
+            if (results != null) {
+                results.save();
+                Alert alert = new Alert("Stored", "The summary was written to the RecordStore "
+                        + Results.STORE_NAME + ".", null, AlertType.INFO);
+                alert.setTimeout(Alert.FOREVER);
+                display.setCurrent(alert, listScreen);
             }
-        });
-        runThread.start();
-    }
-
-    private void startAutorun() {
-        final TestSuite[] suites = Suites.all();
-        runner = new TestRunner(this);
-        runThread = new Thread(new Runnable() {
-            public void run() {
-                try {
-                    if (autoSuiteId == null) {
-                        for (int i = 0; i < suites.length; i++) {
-                            if (runner.isCancelled()) break;
-                            runner.run(suites[i]);
-                        }
-                    } else {
-                        for (int i = 0; i < suites.length; i++) {
-                            if (suites[i].getId().equalsIgnoreCase(autoSuiteId) || suites[i].getTitle().toLowerCase().indexOf(autoSuiteId) >= 0) {
-                                runner.run(suites[i]);
-                                break;
-                            }
-                        }
-                    }
-                    Results r = runner.getResults();
-                    System.out.println("M3GTester autorun finished: total=" + r.total() + " passed=" + r.passed() + " failed=" + r.failed() + " millis=" + r.getMillis());
-                    for (int i = 0; i < r.suiteCount(); i++) {
-                        Results.SuiteRun sr = r.suiteRun(i);
-                        System.out.println("SUITE " + sr.suite.getId() + " " + sr.stats.passed + "/" + sr.stats.total + " failed=" + sr.stats.failed);
-                        for (int j = 0; j < sr.results.size(); j++) {
-                            TestResult tr = (TestResult) sr.results.elementAt(j);
-                            if (tr.isFailure()) {
-                                System.out.println("FAIL " + sr.suite.getId() + "." + tr.getName() + " -> " + tr.getMessage());
-                            }
-                        }
-                    }
-                } finally {
-                    if (autoExit) {
-                        requestExit();
-                    }
-                }
+            return;
+        }
+        if (c == rerunCommand) {
+            if (selectedResult != null && !runningSingle) {
+                rerun(selectedResult.getTest());
             }
-        });
-        runThread.start();
+            return;
+        }
+        if (c == okCommand) {
+            handleSelect(d);
+        }
     }
 
-    // Listener
-    public void suiteStarted(TestSuite suite, int count) {
-        System.out.println("START SUITE " + suite.getId() + " count=" + count);
+    private void handleSelect(Displayable d) {
+        if (d == mainMenu) {
+            int index = mainMenu.getSelectedIndex();
+            if (index == 0) {
+                runAll(false);
+            } else if (index == 1) {
+                showSuites();
+            } else if (index == 2) {
+                showDemos();
+            } else if (index == 3) {
+                showEnvironment();
+            } else if (index == 4) {
+                showLastStoredRun();
+            } else {
+                showHelp();
+            }
+            return;
+        }
+        if (d != listScreen) {
+            return;
+        }
+        int index = listScreen.getSelectedIndex();
+        if (index < 0) {
+            return;
+        }
+        if (listKind == LIST_SUITES) {
+            TestSuite suite = Suites.all()[index];
+            TestSuite[] one = new TestSuite[1];
+            one[0] = suite;
+            runSuites(one, suite.getId(), false);
+        } else if (listKind == LIST_DEMOS) {
+            Displayable screen = Demos.create(index);
+            if (screen != null) {
+                screen.addCommand(backCommand);
+                screen.setCommandListener(this);
+                canvasScreen = (screen instanceof Canvas) ? (Canvas) screen : null;
+                go(screen);
+            }
+        } else if (listKind == LIST_SUITE_RESULTS) {
+            showSuiteRunResults(index);
+        } else if (listKind == LIST_TEST_RESULTS) {
+            showTestDetail(index);
+        }
     }
 
-    public void testStarted(TestSuite suite, TestCase test) {
-        System.out.println("START " + suite.getId() + "." + test.getName());
-    }
-
-    public void testFinished(TestSuite suite, TestResult result) {
-        System.out.println(result.getMark() + " " + suite.getId() + "." + result.getName() + " " + result.getStatusText() + (result.getMessage() != null ? " -> " + result.getMessage() : "") + " " + result.getMillis() + "ms");
-    }
-
-    public void suiteFinished(TestSuite suite, Results.Stats stats) {
-        System.out.println("END SUITE " + suite.getId() + " passed=" + stats.passed + " failed=" + stats.failed + " total=" + stats.total);
+    public Canvas getCanvasScreen() {
+        return canvasScreen;
     }
 }

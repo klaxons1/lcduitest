@@ -1,5 +1,5 @@
 /**
- * M3GTester - MIDP 2.0 M3G conformance test MIDlet.
+ * LcduiTest - MIDP 2.0 LCDUI conformance test MIDlet.
  *
  * Outcome of a single TestCase.
  */

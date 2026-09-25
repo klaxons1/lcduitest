@@ -1,5 +1,5 @@
 /**
- * M3GTester - MIDP 2.0 M3G conformance test MIDlet.
+ * LcduiTest - MIDP 2.0 LCDUI conformance test MIDlet.
  *
  * Reads the MIDP system properties. This is the cheapest way to find out what
  * a given emulator claims to implement, and it is also a good smoke test: on a

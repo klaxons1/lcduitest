@@ -12,7 +12,9 @@ public class CameraSuite extends TestSuite {
             public void run() {
                 Camera cam = new Camera();
                 cam.setPerspective(60.0f, 1.33f, 0.1f, 100.0f);
-                Assert.assertEquals("fovy", 60.0f, cam.getFieldOfView(), 0.001f);
+                Transform t = new Transform();
+                int type = cam.getProjection(t);
+                Assert.assertEquals("type PERSPECTIVE", Camera.PERSPECTIVE, type);
             }
         });
 
@@ -20,8 +22,9 @@ public class CameraSuite extends TestSuite {
             public void run() {
                 Camera cam = new Camera();
                 cam.setParallel(2.0f, 2.0f, 0.1f, 100.0f);
-                // No getter for parallel size, just check mode
-                Assert.assertTrue("parallel", true);
+                Transform t = new Transform();
+                int type = cam.getProjection(t);
+                Assert.assertEquals("type PARALLEL", Camera.PARALLEL, type);
             }
         });
 
@@ -32,19 +35,19 @@ public class CameraSuite extends TestSuite {
                 t.setIdentity();
                 cam.setGeneric(t);
                 Transform out = new Transform();
-                cam.getGeneric(out);
-                Assert.assertTrue("generic set", out.isIdentity());
+                int type = cam.getProjection(out);
+                Assert.assertEquals("type GENERIC", Camera.GENERIC, type);
             }
         });
 
-        add(new TestCase("isPerspective") {
+        add(new TestCase("getProjection float[]") {
             public void run() {
                 Camera cam = new Camera();
                 cam.setPerspective(60, 1, 1, 100);
-                // getProjection returns transform, but we can check that camera is valid
-                Transform proj = new Transform();
-                cam.getProjection(proj);
-                Assert.assertFalse("not identity", proj.isIdentity());
+                float[] params = new float[4];
+                int type = cam.getProjection(params);
+                Assert.assertEquals("type", Camera.PERSPECTIVE, type);
+                Assert.assertTrue("fovy >0", params[0] > 0);
             }
         });
     }

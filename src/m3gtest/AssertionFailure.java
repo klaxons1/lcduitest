@@ -1,5 +1,5 @@
 /*
- * M3GTester - MIDP 2.0 M3G conformance test MIDlet.
+ * LcduiTest - MIDP 2.0 LCDUI conformance test MIDlet.
  *
  * Thrown by the Assert helper methods when a test's expectation is not met.
  * It extends Error (not Exception) so that application-level "catch (Exception)"

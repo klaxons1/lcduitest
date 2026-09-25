@@ -1,5 +1,5 @@
 /**
- * M3GTester - MIDP 2.0 M3G conformance test MIDlet.
+ * LcduiTest - MIDP 2.0 LCDUI conformance test MIDlet.
  *
  * Executes test cases and reports progress to a listener. The runner never
  * lets an exception escape: assertion failures are reported as FAIL, anything

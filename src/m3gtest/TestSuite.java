@@ -1,6 +1,7 @@
 /**
- * M3G Tester - test suite container.
- * A named group of TestCases, one group per area of the M3G API.
+ * LcduiTest - MIDP 2.0 LCDUI conformance test MIDlet.
+ *
+ * A named group of TestCases, one group per area of the lcdui API.
  * Suites are built explicitly (no reflection in CLDC), see Suites.java.
  */
 package m3gtest;
@@ -16,8 +17,8 @@ public class TestSuite extends TestCase {
     private final Vector cases = new Vector();
 
     /**
-     * @param id      short machine readable id, e.g. "World"
-     * @param title   title shown in the menu, e.g. "World"
+     * @param id      short machine readable id, e.g. "Display"
+     * @param title   title shown in the menu, e.g. "Display + Displayable"
      * @param summary one line description of the area that is covered
      */
     public TestSuite(String id, String title, String summary) {
