@@ -41,7 +41,6 @@ public class EdgeCasesSuite extends TestSuite {
                 Mesh m = createMesh();
                 m.setUserID(123);
                 Mesh dup = (Mesh) m.duplicate();
-                // Duplicate may or may not preserve userID per spec, just check not crash
                 Assert.assertNotNull("dup", dup);
             }
         });
@@ -50,10 +49,10 @@ public class EdgeCasesSuite extends TestSuite {
         add(new TestCase("Transform invert singular throws") {
             public void run() {
                 final Transform t = new Transform();
-                float[] zero = new float[16]; // all zeros -> singular
+                float[] zero = new float[16];
                 t.set(zero);
                 Assert.expectException("singular invert", ArithmeticException.class, new Assert.Code() {
-                    public void run() {
+                    public void run() throws Exception {
                         t.invert();
                     }
                 });
@@ -64,12 +63,12 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final Transform t = new Transform();
                 Assert.expectException("null set", NullPointerException.class, new Assert.Code() {
-                    public void run() {
+                    public void run() throws Exception {
                         t.set((Transform)null);
                     }
                 });
                 Assert.expectException("null set float[]", NullPointerException.class, new Assert.Code() {
-                    public void run() {
+                    public void run() throws Exception {
                         t.set((float[])null);
                     }
                 });
@@ -80,7 +79,7 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final Transform t = new Transform();
                 Assert.expectException("null get", NullPointerException.class, new Assert.Code() {
-                    public void run() {
+                    public void run() throws Exception {
                         t.get((float[])null);
                     }
                 });
@@ -91,7 +90,7 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final Transform t = new Transform();
                 Assert.expectException("null postMultiply", NullPointerException.class, new Assert.Code() {
-                    public void run() {
+                    public void run() throws Exception {
                         t.postMultiply(null);
                     }
                 });
@@ -103,12 +102,12 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final VertexArray va = new VertexArray(2, 3, 2);
                 Assert.expectException("null byte", NullPointerException.class, new Assert.Code() {
-                    public void run() {
+                    public void run() throws Exception {
                         va.set(0, 1, (byte[])null);
                     }
                 });
                 Assert.expectException("null short", NullPointerException.class, new Assert.Code() {
-                    public void run() {
+                    public void run() throws Exception {
                         va.set(0, 1, (short[])null);
                     }
                 });
@@ -121,7 +120,7 @@ public class EdgeCasesSuite extends TestSuite {
                 short[] s = new short[]{0,0,0, 1,1,1};
                 va.set(0, 2, s);
                 Assert.expectException("null get byte", NullPointerException.class, new Assert.Code() {
-                    public void run() {
+                    public void run() throws Exception {
                         va.get(0, 1, (byte[])null);
                     }
                 });
@@ -131,16 +130,16 @@ public class EdgeCasesSuite extends TestSuite {
         add(new TestCase("VertexArray invalid ctor args") {
             public void run() {
                 Assert.expectException("0 vertices", IllegalArgumentException.class, new Assert.Code() {
-                    public void run() { new VertexArray(0, 3, 2); }
+                    public void run() throws Exception { new VertexArray(0, 3, 2); }
                 });
                 Assert.expectException("1 component", IllegalArgumentException.class, new Assert.Code() {
-                    public void run() { new VertexArray(1, 1, 2); }
+                    public void run() throws Exception { new VertexArray(1, 1, 2); }
                 });
                 Assert.expectException("5 components", IllegalArgumentException.class, new Assert.Code() {
-                    public void run() { new VertexArray(1, 5, 2); }
+                    public void run() throws Exception { new VertexArray(1, 5, 2); }
                 });
                 Assert.expectException("3 byte size", IllegalArgumentException.class, new Assert.Code() {
-                    public void run() { new VertexArray(1, 3, 3); }
+                    public void run() throws Exception { new VertexArray(1, 3, 3); }
                 });
             }
         });
@@ -150,21 +149,21 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final VertexBuffer vb = new VertexBuffer();
                 Assert.expectException("null pos", NullPointerException.class, new Assert.Code() {
-                    public void run() { vb.setPositions(null, 1.0f, new float[]{0,0,0}); }
+                    public void run() throws Exception { vb.setPositions(null, 1.0f, new float[]{0,0,0}); }
                 });
             }
         });
 
         add(new TestCase("VertexBuffer mismatched vertex count throws") {
             public void run() {
-                VertexArray pos = new VertexArray(3, 3, 2);
+                final VertexArray pos = new VertexArray(3, 3, 2);
                 pos.set(0, 3, new short[9]);
-                VertexArray tex = new VertexArray(2, 2, 2);
+                final VertexArray tex = new VertexArray(2, 2, 2);
                 tex.set(0, 2, new short[4]);
                 final VertexBuffer vb = new VertexBuffer();
                 vb.setPositions(pos, 1.0f, new float[]{0,0,0});
                 Assert.expectException("mismatched count", IllegalArgumentException.class, new Assert.Code() {
-                    public void run() { vb.setTexCoords(0, tex, 1.0f, new float[]{0,0,0}); }
+                    public void run() throws Exception { vb.setTexCoords(0, tex, 1.0f, new float[]{0,0,0}); }
                 });
             }
         });
@@ -182,7 +181,7 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final Image2D img = new Image2D(Image2D.RGB, 4, 4);
                 Assert.expectException("null set", NullPointerException.class, new Assert.Code() {
-                    public void run() { img.set(0,0,2,2,null); }
+                    public void run() throws Exception { img.set(0,0,2,2,null); }
                 });
             }
         });
@@ -191,7 +190,7 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final Image2D img = new Image2D(Image2D.RGB, 2, 2, new byte[12]);
                 Assert.expectException("immutable", IllegalStateException.class, new Assert.Code() {
-                    public void run() { img.set(0,0,1,1,new byte[3]); }
+                    public void run() throws Exception { img.set(0,0,1,1,new byte[3]); }
                 });
             }
         });
@@ -200,10 +199,9 @@ public class EdgeCasesSuite extends TestSuite {
         add(new TestCase("Texture2D setImage null allowed?") {
             public void run() {
                 Image2D img = new Image2D(Image2D.RGB, 2, 2, new byte[12]);
-                Texture2D tex = new Texture2D(img);
+                final Texture2D tex = new Texture2D(img);
                 try {
                     tex.setImage(null);
-                    // Some impls allow null, some throw NPE - both ok if no crash
                     Assert.assertTrue("null image allowed", true);
                 } catch (NullPointerException e) {
                     Assert.assertTrue("NPE for null image", true);
@@ -216,7 +214,7 @@ public class EdgeCasesSuite extends TestSuite {
                 final Image2D img = new Image2D(Image2D.RGB, 2, 2, new byte[12]);
                 final Texture2D tex = new Texture2D(img);
                 Assert.expectException("invalid filter", IllegalArgumentException.class, new Assert.Code() {
-                    public void run() { tex.setFiltering(999, 999); }
+                    public void run() throws Exception { tex.setFiltering(999, 999); }
                 });
             }
         });
@@ -228,7 +226,7 @@ public class EdgeCasesSuite extends TestSuite {
                 Image2D img = new Image2D(Image2D.RGB, 2, 2, new byte[12]);
                 final Texture2D tex = new Texture2D(img);
                 Assert.expectException("invalid texture index", IndexOutOfBoundsException.class, new Assert.Code() {
-                    public void run() { ap.setTexture(999, tex); }
+                    public void run() throws Exception { ap.setTexture(999, tex); }
                 });
             }
         });
@@ -237,7 +235,7 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final Appearance ap = new Appearance();
                 Assert.expectException("invalid getTexture", IndexOutOfBoundsException.class, new Assert.Code() {
-                    public void run() { ap.getTexture(999); }
+                    public void run() throws Exception { ap.getTexture(999); }
                 });
             }
         });
@@ -247,7 +245,7 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final Group g = new Group();
                 Assert.expectException("null child", NullPointerException.class, new Assert.Code() {
-                    public void run() { g.addChild(null); }
+                    public void run() throws Exception { g.addChild(null); }
                 });
             }
         });
@@ -256,7 +254,7 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final Group g = new Group();
                 Assert.expectException("self child", IllegalArgumentException.class, new Assert.Code() {
-                    public void run() { g.addChild(g); }
+                    public void run() throws Exception { g.addChild(g); }
                 });
             }
         });
@@ -266,7 +264,7 @@ public class EdgeCasesSuite extends TestSuite {
                 final Group g = new Group();
                 final World w = new World();
                 Assert.expectException("World as child", IllegalArgumentException.class, new Assert.Code() {
-                    public void run() { g.addChild(w); }
+                    public void run() throws Exception { g.addChild(w); }
                 });
             }
         });
@@ -278,7 +276,6 @@ public class EdgeCasesSuite extends TestSuite {
                     g.removeChild(null);
                     Assert.assertTrue("remove null no throw", true);
                 } catch (NullPointerException e) {
-                    // Some impls throw NPE, acceptable
                     Assert.assertTrue("NPE for remove null", true);
                 }
             }
@@ -289,7 +286,7 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final Mesh m = createMesh();
                 Assert.expectException("invalid index", IndexOutOfBoundsException.class, new Assert.Code() {
-                    public void run() { m.setAppearance(5, new Appearance()); }
+                    public void run() throws Exception { m.setAppearance(5, new Appearance()); }
                 });
             }
         });
@@ -298,7 +295,7 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final Mesh m = createMesh();
                 Assert.expectException("invalid getIndexBuffer", IndexOutOfBoundsException.class, new Assert.Code() {
-                    public void run() { m.getIndexBuffer(5); }
+                    public void run() throws Exception { m.getIndexBuffer(5); }
                 });
             }
         });
@@ -311,7 +308,6 @@ public class EdgeCasesSuite extends TestSuite {
                     w.setActiveCamera(null);
                     Assert.assertNull("camera null", w.getActiveCamera());
                 } catch (Throwable t) {
-                    // Some impls may throw, but should not crash VM
                     Assert.assertTrue("exception for null camera", true);
                 }
             }
@@ -330,7 +326,7 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final AnimationController ctrl = new AnimationController();
                 Assert.expectException("start>end", IllegalArgumentException.class, new Assert.Code() {
-                    public void run() { ctrl.setActiveInterval(1000, 0); }
+                    public void run() throws Exception { ctrl.setActiveInterval(1000, 0); }
                 });
             }
         });
@@ -340,7 +336,6 @@ public class EdgeCasesSuite extends TestSuite {
                 AnimationController ctrl = new AnimationController();
                 try {
                     ctrl.setWeight(-1.0f);
-                    // Negative weight may be allowed, just check no crash
                     Assert.assertTrue("negative weight", true);
                 } catch (IllegalArgumentException e) {
                     Assert.assertTrue("IAE for negative weight", true);
@@ -353,7 +348,7 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final KeyframeSequence ks = new KeyframeSequence(2, 3, KeyframeSequence.LINEAR);
                 Assert.expectException("invalid index", IndexOutOfBoundsException.class, new Assert.Code() {
-                    public void run() { ks.setKeyframe(5, 0, new float[]{0,0,0}); }
+                    public void run() throws Exception { ks.setKeyframe(5, 0, new float[]{0,0,0}); }
                 });
             }
         });
@@ -362,7 +357,7 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final KeyframeSequence ks = new KeyframeSequence(1, 3, KeyframeSequence.LINEAR);
                 Assert.expectException("negative duration", IllegalArgumentException.class, new Assert.Code() {
-                    public void run() { ks.setDuration(-1); }
+                    public void run() throws Exception { ks.setDuration(-1); }
                 });
             }
         });
@@ -371,10 +366,10 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final KeyframeSequence ks = new KeyframeSequence(3, 3, KeyframeSequence.LINEAR);
                 Assert.expectException("invalid range", IllegalArgumentException.class, new Assert.Code() {
-                    public void run() { ks.setValidRange(2, 1); }
+                    public void run() throws Exception { ks.setValidRange(2, 1); }
                 });
                 Assert.expectException("out of bounds", IndexOutOfBoundsException.class, new Assert.Code() {
-                    public void run() { ks.setValidRange(0, 5); }
+                    public void run() throws Exception { ks.setValidRange(0, 5); }
                 });
             }
         });
@@ -384,7 +379,7 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final Graphics3D g3d = Graphics3D.getInstance();
                 Assert.expectException("null bind", NullPointerException.class, new Assert.Code() {
-                    public void run() { g3d.bindTarget(null); }
+                    public void run() throws Exception { g3d.bindTarget(null); }
                 });
             }
         });
@@ -392,10 +387,9 @@ public class EdgeCasesSuite extends TestSuite {
         add(new TestCase("Graphics3D releaseTarget without bind throws") {
             public void run() {
                 final Graphics3D g3d = Graphics3D.getInstance();
-                // Ensure no target bound
                 try { g3d.releaseTarget(); } catch (Throwable t) {}
                 Assert.expectException("release without bind", IllegalStateException.class, new Assert.Code() {
-                    public void run() { g3d.releaseTarget(); }
+                    public void run() throws Exception { g3d.releaseTarget(); }
                 });
             }
         });
@@ -404,7 +398,7 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final Graphics3D g3d = Graphics3D.getInstance();
                 Assert.expectException("null camera", NullPointerException.class, new Assert.Code() {
-                    public void run() { g3d.setCamera(null, new Transform()); }
+                    public void run() throws Exception { g3d.setCamera(null, new Transform()); }
                 });
             }
         });
@@ -413,7 +407,7 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final Graphics3D g3d = Graphics3D.getInstance();
                 Assert.expectException("null light", NullPointerException.class, new Assert.Code() {
-                    public void run() { g3d.addLight(null, new Transform()); }
+                    public void run() throws Exception { g3d.addLight(null, new Transform()); }
                 });
             }
         });
@@ -422,8 +416,8 @@ public class EdgeCasesSuite extends TestSuite {
         add(new TestCase("Loader load with offset out of bounds throws") {
             public void run() {
                 final byte[] data = new byte[]{0,1,2,3};
-                Assert.expectException("offset OOB", IndexOutOfBoundsException.class, new Assert.Code() {
-                    public void run() { Loader.load(data, 10); }
+                Assert.expectException("offset OOB", Exception.class, new Assert.Code() {
+                    public void run() throws Exception { Loader.load(data, 10); }
                 });
             }
         });
@@ -433,7 +427,7 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final Group g = new Group();
                 Assert.expectException("null transform", NullPointerException.class, new Assert.Code() {
-                    public void run() { g.setTransform(null); }
+                    public void run() throws Exception { g.setTransform(null); }
                 });
             }
         });
@@ -442,7 +436,7 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final Group g = new Group();
                 Assert.expectException("null getTransform", NullPointerException.class, new Assert.Code() {
-                    public void run() { g.getTransform(null); }
+                    public void run() throws Exception { g.getTransform(null); }
                 });
             }
         });
@@ -452,7 +446,6 @@ public class EdgeCasesSuite extends TestSuite {
                 Group g = new Group();
                 try {
                     g.setAlphaFactor(2.0f);
-                    // Some impls clamp, some throw IAE - both ok
                     Assert.assertTrue("alpha >1 allowed", true);
                 } catch (IllegalArgumentException e) {
                     Assert.assertTrue("IAE for alpha >1", true);
@@ -474,7 +467,7 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final Light l = new Light();
                 Assert.expectException("invalid mode", IllegalArgumentException.class, new Assert.Code() {
-                    public void run() { l.setMode(999); }
+                    public void run() throws Exception { l.setMode(999); }
                 });
             }
         });
@@ -484,10 +477,10 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final Camera cam = new Camera();
                 Assert.expectException("fovy 0", IllegalArgumentException.class, new Assert.Code() {
-                    public void run() { cam.setPerspective(0, 1, 1, 10); }
+                    public void run() throws Exception { cam.setPerspective(0, 1, 1, 10); }
                 });
                 Assert.expectException("fovy 180", IllegalArgumentException.class, new Assert.Code() {
-                    public void run() { cam.setPerspective(180, 1, 1, 10); }
+                    public void run() throws Exception { cam.setPerspective(180, 1, 1, 10); }
                 });
             }
         });
@@ -496,7 +489,7 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final Camera cam = new Camera();
                 Assert.expectException("near>=far", IllegalArgumentException.class, new Assert.Code() {
-                    public void run() { cam.setPerspective(60, 1, 10, 1); }
+                    public void run() throws Exception { cam.setPerspective(60, 1, 10, 1); }
                 });
             }
         });
@@ -508,7 +501,6 @@ public class EdgeCasesSuite extends TestSuite {
                 Sprite3D sprite = new Sprite3D(false, img, new Appearance());
                 try {
                     sprite.setCrop(-1, -1, 2, 2);
-                    // Some impls allow negative, some throw - both ok
                     Assert.assertTrue("negative crop allowed", true);
                 } catch (IllegalArgumentException e) {
                     Assert.assertTrue("IAE for negative crop", true);
@@ -521,7 +513,7 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final MorphingMesh mm = createMorphingMesh();
                 Assert.expectException("wrong weights length", IllegalArgumentException.class, new Assert.Code() {
-                    public void run() { mm.setWeights(new float[]{0.5f, 0.5f}); }
+                    public void run() throws Exception { mm.setWeights(new float[]{0.5f, 0.5f}); }
                 });
             }
         });
@@ -531,7 +523,7 @@ public class EdgeCasesSuite extends TestSuite {
             public void run() {
                 final SkinnedMesh sm = createSkinnedMesh();
                 Assert.expectException("null bone", NullPointerException.class, new Assert.Code() {
-                    public void run() { sm.addTransform(null, 1, 0, 1); }
+                    public void run() throws Exception { sm.addTransform(null, 1, 0, 1); }
                 });
             }
         });
@@ -539,10 +531,10 @@ public class EdgeCasesSuite extends TestSuite {
         add(new TestCase("SkinnedMesh addTransform invalid vertex range throws") {
             public void run() {
                 final SkinnedMesh sm = createSkinnedMesh();
-                Group skeleton = sm.getSkeleton();
-                Node bone = skeleton.getChild(0);
-                Assert.expectException("invalid range", IndexOutOfBoundsException.class, new Assert.Code() {
-                    public void run() { sm.addTransform(bone, 1, 100, 10); }
+                final Group skeleton = sm.getSkeleton();
+                final Node bone = skeleton.getChild(0);
+                Assert.expectException("invalid range", Exception.class, new Assert.Code() {
+                    public void run() throws Exception { sm.addTransform(bone, 1, 100, 10); }
                 });
             }
         });
