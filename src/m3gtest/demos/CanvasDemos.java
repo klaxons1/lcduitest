@@ -475,7 +475,7 @@ public class CanvasDemos {
             sunCM.setBlending(CompositingMode.ALPHA);
             sunApp.setCompositingMode(sunCM);
             sunSprite = new Sprite3D(true, sunImage2D, sunApp);
-            sunSprite.setScale(6.0f, 6.0f);
+            sunSprite.setScale(6.0f, 6.0f, 6.0f);
             Transform sunT = new Transform();
             sunT.postTranslate(15, 12, -20);
             sunSprite.setTransform(sunT);
@@ -834,8 +834,8 @@ public class CanvasDemos {
                     float dy = targetY - camY;
                     float dz = targetZ - camZ;
                     float lenXZ = (float)Math.sqrt(dx*dx + dz*dz);
-                    float yaw = (float)Math.toDegrees(Math.atan2(-dx, -dz));
-                    float pitch = (float)Math.toDegrees(Math.atan2(dy, lenXZ));
+                    float yaw = toDegrees(atan2(-dx, -dz));
+                    float pitch = toDegrees(atan2(dy, lenXZ));
 
                     camTransform.setIdentity();
                     camTransform.postTranslate(camX, camY, camZ);
@@ -894,6 +894,45 @@ public class CanvasDemos {
                 g.drawString(t.toString(), 2, 14, Graphics.TOP|Graphics.LEFT);
                 status = "render fail: "+t;
             }
+        }
+
+        // --- CLDC 1.1 compatible math helpers (atan2 missing in J2ME) ---
+        private static final float PI = 3.1415926535f;
+        private static final float PI_2 = PI * 0.5f;
+        private static final float PI_4 = PI * 0.25f;
+
+        private static float toDegrees(float rad) {
+            return rad * 57.2957795f;
+        }
+
+        // Fast atan approximation: atan(x) ~ PI/4*x - x*(|x|-1)*(0.2447+0.0663*|x|) for |x|<=1
+        // For |x|>1: atan(x)=PI/2 - atan(1/x)
+        private static float atan(float x) {
+            boolean neg = x < 0;
+            float ax = neg ? -x : x;
+            float r;
+            if (ax <= 1.0f) {
+                r = PI_4 * ax - ax * (ax - 1.0f) * (0.2447f + 0.0663f * ax);
+            } else {
+                float inv = 1.0f / ax;
+                float atanInv = PI_4 * inv - inv * (inv - 1.0f) * (0.2447f + 0.0663f * inv);
+                r = PI_2 - atanInv;
+            }
+            return neg ? -r : r;
+        }
+
+        private static float atan2(float y, float x) {
+            if (x == 0.0f) {
+                if (y > 0.0f) return PI_2;
+                if (y < 0.0f) return -PI_2;
+                return 0.0f;
+            }
+            float a = atan(y / x);
+            if (x < 0.0f) {
+                if (y >= 0.0f) a += PI;
+                else a -= PI;
+            }
+            return a;
         }
     }
 }
