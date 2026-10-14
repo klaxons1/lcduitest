@@ -6,7 +6,8 @@ right away, full screen 240×320:
 - the video `docs/Phantasm Mineshaft Chase scene.mp4` is cropped to the screen aspect and fills it;
 - every frame is a mosaic of flat-coloured triangles in two layers:
   - **environment**: a uniform grid of 48×64 cells (5×5 px), each cell cut into two triangles, each
-    triangle with its own colour from a 16-colour palette (6144 triangles per frame);
+    triangle with its own colour from a 16-colour palette that is re-fitted to the picture
+    (6144 triangles per frame);
   - **people**: small triangles (adaptive quadtree, down to 4 px, about 417 leaves on average, up to
     1159) drawn on top, following outlines and details, with a 64-colour palette; the regions are
     marked by hand on keyframes every 3 s (`tools/lotus/people_keyframes.json`);
@@ -19,9 +20,9 @@ right away, full screen 240×320:
 |------|------|
 | `src/LotusDemo.java` | MIDlet: lifecycle, background MIDI, Exit and Music on/off commands |
 | `src/LotusCanvas.java` | Canvas and playback thread: draws the environment grid, then the people triangles (`fillTriangle`) |
-| `src/LotusFilm.java` | Streams `res/lotus.bin` and decodes each frame: environment colour nibbles and the people tree |
-| `res/lotus.bin` | Format LOT7: 802 frames, each an environment grid and a people tree (generated, ~3.3 MB) |
-| `tools/make_lotus_data.py` | Video + people markup → `res/lotus.bin` (environment grid, people quadtree, two palettes) |
+| `src/LotusFilm.java` | Streams `res/lotus.bin` and decodes each frame: environment palette, triangle indices read from the frame buffer, and the people tree |
+| `res/lotus.bin` | Format LOT8: 802 frames, each an environment palette, grid indices and a people tree (generated, ~3.3 MB) |
+| `tools/make_lotus_data.py` | Video + people markup → `res/lotus.bin` (environment grid, people quadtree, per-frame and people palettes) |
 | `tools/lotus/people_keyframes.json` | Manual people markup: ellipses `[cx, cy, rx, ry]` on keyframes 0–53 (every 3 s), in 240×320 |
 | `tools/preview/LotusPreview.java` | Desktop PNG preview: environment grid plus people triangles |
 | `libs/cldc11.jar`, `libs/midp21.jar` | CLDC 1.1 / MIDP 2.1 APIs (from `klaxons1/l2d_m3g`) |
@@ -36,9 +37,12 @@ right away, full screen 240×320:
    screen is divided into a uniform grid of `--env-cols` × `--env-rows` cells (48×64 in the current build).
    Each cell is cut along its TL-BR diagonal into an upper-right and a lower-left triangle. Each
    triangle takes the mean colour of its pixels (people pixels excluded when possible), quantised to
-   a 16-colour palette shared by the whole film (k-means). A triangle keeps its previous palette
+   a 16-colour palette (k-means). The palette is fitted to every frame: on key frames (every
+   `--key-interval`, default 25) it is stored absolutely, and on other frames it is warm-started from
+   the previous palette and stored as a small signed delta. A triangle keeps its previous palette
    index while that colour is within `--hysteresis` (default 8) of the best one, so the picture
-   flickers less and the file compresses better.
+   flickers less and the file compresses better. The decoder keeps only the palette between frames;
+   the indices are read from the current frame when it is drawn.
 2. **People.** The ellipses from the markup for the frame's time are interpolated between
    keyframes (when both keyframes have the same number of people; otherwise the nearest keyframe is
    held). A quadtree covers the screen, but only cells that touch an ellipse are kept. A cell is
@@ -47,16 +51,24 @@ right away, full screen 240×320:
    fits the picture best, and each triangle is one flat colour (64-colour people palette, k-means,
    each triangle weighted by its area).
 
-## Data format (LOT7)
+## Data format (LOT8)
 
-Header: magic `LOT7`, version, fps, frame count, source size 240×320, minimum cell, max people leaves
-per frame, grid columns and rows, environment palette size, people palette size, largest frame
-payload, then the two palettes. Then per frame: a 16-bit length and the payload: a 16-bit tree bit
-length, the bit-packed people tree, one byte per environment cell (high nibble = upper-right
-triangle, low nibble = lower-left triangle), then two people palette bytes per leaf. The tree has, for
-each node, a "present" bit (0 = no people in this node), a "split" bit where the node can split, and a
-"diagonal" bit per leaf. The device streams the frames from the jar and draws each frame as it is
-decoded.
+Big-endian. Header: magic `LOT8`, version (8), fps, frame count, source size 240×320, minimum cell,
+max people leaves per frame, grid columns and rows, environment palette size, people palette size,
+largest frame payload, then the people palette (3 bytes per colour). Then per frame: a 16-bit length
+and the payload:
+
+- a flags byte (bit 0 = key frame);
+- the environment palette: absolute RGB on a key frame, otherwise one signed byte per channel and
+  entry, added to the previous frame's palette (clamped to 0..255);
+- a 16-bit tree bit length, the bit-packed people tree;
+- one 4-bit index per environment triangle (two per byte, the upper-right triangle of a cell in the
+  high nibble), into the frame's palette;
+- two people palette bytes per people leaf.
+
+The tree has, for each node, a "present" bit (0 = no people in this node), a "split" bit where the
+node can split, and a "diagonal" bit per leaf. The device streams the frames from the jar and draws
+each frame as it is decoded. Skipped frames are still read so the palette stays in step.
 
 ## Regenerating the film data
 
@@ -65,16 +77,24 @@ pip install numpy pillow imageio-ffmpeg
 python3 tools/make_lotus_data.py --video "docs/Phantasm Mineshaft Chase scene.mp4" \
     --out res/lotus.bin --fps 5 --people tools/lotus/people_keyframes.json \
     --env-cols 48 --env-rows 64 --env-colours 16 \
-    --detail 15 --min-cell 4 --max-cell 32 --colours 64
+    --detail 15 --min-cell 4 --max-cell 32 --colours 64 \
+    --palette frame --palette-threshold 0 --key-interval 25 --hysteresis 8
 ```
 
 Options: `--env-cols` / `--env-rows` (grid size; more cells = more triangles per frame),
-`--env-colours` (environment palette, up to 16), `--people` (people markup), `--colours` (people
-palette), `--quantiser kmeans|mediancut` (how the palettes are chosen; k-means is the default), `--hysteresis` (environment index stickiness, RGB distance; default 8, 0 = off), `--detail` (lower = more people triangles), `--min-cell` / `--max-cell` (smallest and
-largest people triangle cell in pixels), `--fps`, `--fit crop|stretch` (crop keeps the aspect ratio
-and fills the screen), `--start` / `--duration` to pick a part of the video, `--preview` for a PNG
-sheet. With the settings above, the full clip (160 s) is 3.3 MB. The decoded frames are not stored
-in git.
+`--env-colours` (environment palette per frame, up to 16), `--palette frame|global` (a palette per
+frame, the default, or one for the whole film; per frame costs about 20% more size), `--key-interval`
+(absolute environment palette every N frames, default 25), `--palette-threshold` (take a new
+palette only if it lowers the error by this fraction, default 0 = every frame; 0.05 gives about 1.5%
+less size for about 1% more error), `--people` (people markup), `--colours` (people palette),
+`--quantiser kmeans|mediancut` (how the palettes are chosen; k-means is the default), `--hysteresis`
+(environment index stickiness, RGB distance; default 8, 0 = off), `--detail` (lower = more people
+triangles), `--min-cell` / `--max-cell` (smallest and largest people triangle cell in pixels), `--fps`,
+`--fit crop|stretch` (crop keeps the aspect ratio and fills the screen), `--start` / `--duration` to
+pick a part of the video, `--preview` for a PNG sheet. With the settings above, the full clip
+(160 s) is 3.3 MB. The decoded frames are not stored in git.
+
+Size of the jar (`build.sh`): 1 581 382 bytes for LOT8, against 1 352 879 for LOT7 (0.0.11).
 
 To edit the people markup, change the ellipses in `tools/lotus/people_keyframes.json` (keyframe `k`
 is the source time `3k` s, an empty list means no people) and regenerate.
@@ -103,7 +123,8 @@ JAVA_HOME=/path/to/jdk8 tools/kvm/check_film.sh
 `tools/kvm/check_film.sh` compiles `LotusFilm` and `tools/kvm/KvmCheck.java` for CLDC, preverifies them,
 runs them on the KVM (`build/j2me/kvm`) and on the desktop JVM, and compares the checksums over a
 fixed sequence of frame seeks. The current `res/lotus.bin` gives 802 frames, 48×64, on both (checksum
-`3747855290951571346`).
+`2754191992061829074`), and the environment palette hash `-6010713978437608831` matches the encoder.
+On the KVM, all 802 frames decode in about 250 ms.
 
 ## Desktop preview
 
