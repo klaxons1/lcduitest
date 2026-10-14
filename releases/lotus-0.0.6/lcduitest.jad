@@ -1,8 +1,8 @@
 MicroEdition-Configuration: CLDC-1.1
 MicroEdition-Profile: MIDP-2.0
 MIDlet-Vendor: Anonymous developer
-MIDlet-Version: 0.0.5
+MIDlet-Version: 0.0.6
 MIDlet-Name: Lotus
 MIDlet-1: Lotus,,LotusDemo
 MIDlet-Jar-URL: lcduitest.jar
-MIDlet-Jar-Size: 166133
+MIDlet-Jar-Size: 124179

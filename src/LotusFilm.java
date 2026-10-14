@@ -3,16 +3,22 @@ import java.io.IOException;
 import java.io.InputStream;
 
 /**
- * Plays the video as a film modelled with triangles. Every frame has its own adaptive mesh:
- * a quadtree over the screen, where each leaf is cut into two flat-coloured triangles along
- * the diagonal that fits the picture. Detailed parts get small triangles, flat parts big ones.
+ * Plays the video as a film modelled with flat-coloured triangles. Every frame has two layers:
  *
- * The data (res/lotus.bin, made by tools/make_lotus_data.py) is format "LOT4". Each frame is a
- * compact tree (bits) plus two colour bytes per leaf, read as a stream. The tree is decoded
- * here and drawn straight away; the cells tile the screen with no gaps.
+ *  1. Environment: a static, coarse mesh of big triangles covering the whole screen (the same
+ *     triangles every frame, with a new flat colour per frame). Drawn first.
+ *  2. People: an adaptive quadtree over the people regions (marked by hand). Each leaf is cut
+ *     into two flat-coloured triangles along the diagonal that fits the picture best. Small
+ *     triangles follow the outlines and details. Drawn on top of the environment.
+ *
+ * The data (res/lotus.bin, made by tools/make_lotus_data.py) is format "LOT5". Each frame is a
+ * tree bitstream plus colour bytes: one per environment triangle, then two per people leaf.
  */
 final class LotusFilm {
     static final String RESOURCE = "/lotus.bin";
+
+    /** Coordinates of the environment mesh are stored in 0..NORM (see the tool). */
+    private static final int NORM = 1024;
 
     final int fps;
     final int frames;
@@ -23,12 +29,22 @@ final class LotusFilm {
     /** Palette entries as 0xRRGGBB. */
     final int[] palette;
 
+    /** Environment mesh: vertices in 0..NORM, triangles as three vertex indices. */
+    final int envVertCount;
+    final int envTriCount;
+    private final int[] envVX;
+    private final int[] envVY;
+    private final int[] envA;
+    private final int[] envB;
+    private final int[] envC;
+    private final int[] envCol;       // ARGB, per frame
+
     private final Class owner;
     private final int headerBytes;
     private final byte[] payload;
     private final int payloadCapacity;
 
-    // Decoded leaves of the current frame, in traversal order.
+    // Decoded people leaves of the current frame, in traversal order.
     private final int[] lx0;
     private final int[] ly0;
     private final int[] lx1;
@@ -40,13 +56,12 @@ final class LotusFilm {
 
     private DataInputStream in;       // positioned at frame `pos`
     private int pos;                  // index of the next frame the stream yields
-    private int current = -1;         // frame held in the leaf arrays, -1 = none
+    private int current = -1;         // frame held in the arrays, -1 = none
 
     // Bit reader over the payload.
     private int bitPos;
     private int bitEnd;
     private int colourBase;
-    private int colourIndex;
 
     private final int[] tx = new int[3];
     private final int[] ty = new int[3];
@@ -59,11 +74,11 @@ final class LotusFilm {
         DataInputStream d = new DataInputStream(open());
         byte[] magic = new byte[4];
         d.readFully(magic);
-        if (magic[0] != 'L' || magic[1] != 'O' || magic[2] != 'T' || magic[3] != '4') {
+        if (magic[0] != 'L' || magic[1] != 'O' || magic[2] != 'T' || magic[3] != '5') {
             throw new IOException("lotus.bin: bad magic");
         }
         int version = d.readUnsignedByte();
-        if (version != 4) throw new IOException("lotus.bin: unsupported version " + version);
+        if (version != 5) throw new IOException("lotus.bin: unsupported version " + version);
         fps = d.readUnsignedByte();
         frames = d.readUnsignedShort();
         srcW = d.readUnsignedShort();
@@ -71,9 +86,31 @@ final class LotusFilm {
         minCell = d.readUnsignedByte();
         maxLeaves = d.readUnsignedShort();
         int colours = d.readUnsignedByte();
-        if (fps == 0 || frames == 0 || maxLeaves == 0 || srcW == 0 || srcH == 0 || minCell < 2) {
+        envVertCount = d.readUnsignedShort();
+        envTriCount = d.readUnsignedShort();
+        if (fps == 0 || frames == 0 || maxLeaves == 0 || srcW == 0 || srcH == 0 || minCell < 2
+                || envTriCount == 0 || colours == 0) {
             throw new IOException("lotus.bin: empty film");
         }
+
+        envVX = new int[envVertCount];
+        envVY = new int[envVertCount];
+        for (int i = 0; i < envVertCount; i++) {
+            envVX[i] = d.readUnsignedShort();
+            envVY[i] = d.readUnsignedShort();
+        }
+        envA = new int[envTriCount];
+        envB = new int[envTriCount];
+        envC = new int[envTriCount];
+        for (int i = 0; i < envTriCount; i++) {
+            envA[i] = d.readUnsignedShort();
+            envB[i] = d.readUnsignedShort();
+            envC[i] = d.readUnsignedShort();
+            if (envA[i] >= envVertCount || envB[i] >= envVertCount || envC[i] >= envVertCount) {
+                throw new IOException("lotus.bin: bad environment triangle");
+            }
+        }
+        envCol = new int[envTriCount];
 
         palette = new int[colours];
         for (int i = 0; i < colours; i++) {
@@ -82,11 +119,13 @@ final class LotusFilm {
             int b = d.readUnsignedByte();
             palette[i] = (r << 16) | (g << 8) | b;
         }
-        headerBytes = 4 + 12 + 3 * colours;
+        // magic 4, fixed fields 12, mesh counts 4, mesh 4*verts + 6*tris, palette 3 per colour
+        headerBytes = 4 + 12 + 4 + 4 * envVertCount + 6 * envTriCount + 3 * colours;
 
-        // Largest possible payload: 2 bytes of bit count, the tree bits (at most 2 per leaf),
-        // and 2 colour bytes per leaf.
-        payloadCapacity = 2 + (2 * maxLeaves + 7) / 8 + 1 + 2 * maxLeaves;
+        // Tree bits: at most 16 per leaf is generous for a present bit, a split bit and a
+        // diagonal bit over all nodes. Then the environment colours and two colours per leaf.
+        int bitBytes = (16 * maxLeaves + 32) / 8;
+        payloadCapacity = 2 + bitBytes + envTriCount + 2 * maxLeaves + 8;
         payload = new byte[payloadCapacity];
 
         lx0 = new int[maxLeaves];
@@ -107,7 +146,7 @@ final class LotusFilm {
         return s;
     }
 
-    /** Makes frame `index` the current one: reads its payload and decodes the tree. */
+    /** Makes frame `index` the current one: reads its payload and decodes it. */
     void seek(int index) throws IOException {
         if (index == current) return;
         if (index < 0 || index >= frames) throw new IOException("frame " + index + " out of range");
@@ -143,7 +182,6 @@ final class LotusFilm {
         bitPos = 16;
         bitEnd = 16 + bitBytes * 8;
         colourBase = 2 + bitBytes;
-        colourIndex = 0;
         leafCount = 0;
     }
 
@@ -160,11 +198,22 @@ final class LotusFilm {
     }
 
     private void decodeFrame() throws IOException {
+        // Environment colours come first in the colour block.
+        for (int i = 0; i < envTriCount; i++) {
+            int idx = payload[colourBase + i] & 0xff;
+            if (idx >= palette.length) idx = palette.length - 1;
+            envCol[i] = 0xff000000 | palette[idx];
+        }
         visit(0, 0, srcW, srcH);
     }
 
-    /** Same traversal as the tool: children TL, TR, BL, BR at the integer midpoint. */
+    /**
+     * Same traversal as the tool. A node reads a "present" bit (0 = no people here, nothing is
+     * emitted). If present and splittable, a "split" bit. A leaf reads a "diagonal" bit.
+     * Children are TL, TR, BL, BR at the integer midpoint.
+     */
     private void visit(int x0, int y0, int x1, int y1) throws IOException {
+        if (readBit() == 0) return;
         int w = x1 - x0;
         int h = y1 - y0;
         if (w >= 2 * minCell && h >= 2 * minCell) {
@@ -185,8 +234,8 @@ final class LotusFilm {
         lx1[k] = x1;
         ly1[k] = y1;
         ldiag[k] = readBit();
-        int ia = payload[colourBase + 2 * k] & 0xff;
-        int ib = payload[colourBase + 2 * k + 1] & 0xff;
+        int ia = payload[colourBase + envTriCount + 2 * k] & 0xff;
+        int ib = payload[colourBase + envTriCount + 2 * k + 1] & 0xff;
         if (ia >= palette.length) ia = palette.length - 1;
         if (ib >= palette.length) ib = palette.length - 1;
         lcolA[k] = 0xff000000 | palette[ia];
@@ -194,12 +243,22 @@ final class LotusFilm {
     }
 
     /**
-     * Draws the current frame into fb (ARGB, w*h). The leaves tile the whole source area, so the
-     * film fills the screen edge to edge.
+     * Draws the current frame into fb (ARGB, w*h): first the environment triangles, then the
+     * people leaves on top.
      */
     void render(int[] fb, int w, int h) {
         int size = w * h;
         for (int i = 0; i < size; i++) fb[i] = 0xff000000;
+
+        for (int t = 0; t < envTriCount; t++) {
+            int a = envA[t];
+            int b = envB[t];
+            int c = envC[t];
+            setTri(envVX[a] * w / NORM, envVY[a] * h / NORM,
+                   envVX[b] * w / NORM, envVY[b] * h / NORM,
+                   envVX[c] * w / NORM, envVY[c] * h / NORM);
+            fillTriangle(fb, w, h, envCol[t]);
+        }
 
         for (int k = 0; k < leafCount; k++) {
             int x0 = (lx0[k] * w) / srcW;
