@@ -11,8 +11,8 @@ import javax.microedition.media.Player;
 import javax.microedition.midlet.MIDlet;
 
 /**
- * "Lotus" demo: flat-coloured polygons built from frames of a film, flowing through
- * a petal-shaped tunnel, with the MIDI score looping in the background.
+ * "Lotus" demo: the video played back as a film, every frame drawn with single-colour
+ * polygons, with the MIDI score looping in the background.
  */
 public class LotusDemo extends MIDlet implements CommandListener {
 
@@ -27,15 +27,9 @@ public class LotusDemo extends MIDlet implements CommandListener {
 
     protected void startApp() {
         if (canvas == null) {
-            LotusData data;
+            LotusFilm film;
             try {
-                InputStream in = getClass().getResourceAsStream(LotusData.RESOURCE);
-                if (in == null) throw new IOException("missing " + LotusData.RESOURCE);
-                try {
-                    data = LotusData.load(in);
-                } finally {
-                    in.close();
-                }
+                film = new LotusFilm(getClass());
             } catch (IOException e) {
                 Form error = new Form("Lotus");
                 error.append("Data error: " + e.getMessage());
@@ -44,7 +38,7 @@ public class LotusDemo extends MIDlet implements CommandListener {
                 Display.getDisplay(this).setCurrent(error);
                 return;
             }
-            canvas = new LotusCanvas(data);
+            canvas = new LotusCanvas(film);
             canvas.addCommand(exitCommand);
             canvas.addCommand(musicCommand);
             canvas.setCommandListener(this);

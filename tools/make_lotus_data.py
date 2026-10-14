@@ -1,22 +1,36 @@
 #!/usr/bin/env python3
 """
-Extracts frames from a video and turns them into the compact data file used by
-the J2ME "Lotus" demo (res/lotus.bin).
+Turns a video into the film data used by the J2ME "Lotus" demo (res/lotus.bin).
+
+Every sampled frame of the video is box-averaged to a COLS x ROWS grid. On the device each
+grid cell is drawn as one single-colour polygon, so the frame plays back as a mosaic film.
 
 Pipeline:
-  1. ffmpeg samples N frames evenly over the whole clip (decoded as raw RGB).
-  2. Every frame is box-averaged to a SECTORS x BANDS grid of cells. Each cell is
-     one flat colour; on the device every cell becomes one single-colour polygon.
-  3. All cells are quantised to a small shared palette (PALETTE colours).
-  4. The result is written as a binary blob: header, palette, cell indices.
+  1. ffmpeg decodes the chosen time range, sampled at --fps, scaled to COLS x ROWS (area filter).
+  2. The whole sequence is graded (exposure, gamma, a little saturation) so dark footage reads.
+  3. All cells are quantised to one shared palette of --colours entries.
+  4. Frames are written in order as packed palette indices (4 bits per cell for <=16 colours,
+     8 bits otherwise).
 
-Only the derived binary is committed; the decoded frames stay outside the repo.
+Format "LOT2" (big-endian):
+  4 bytes  magic "LOT2"
+  u8       version (2)
+  u8       bits per cell (4 or 8)
+  u8       cols
+  u8       rows
+  u8       palette size
+  u8       fps (frames per second of playback)
+  u16      frame count
+  palette  size * (R, G, B)
+  frames   frame_count * packed(cols*rows cells), row-major, one frame after another
+
+Only the derived binary is committed; decoded frames stay outside the repo.
 
 Requirements: ffmpeg (or imageio-ffmpeg, which bundles one), numpy, Pillow.
 
 Usage:
   python3 tools/make_lotus_data.py --video "docs/Phantasm Mineshaft Chase scene.mp4" \
-      --out res/lotus.bin [--frames 96] [--preview /tmp/lotus_preview.png]
+      --out res/lotus.bin --fps 6 --cols 40 --rows 22 --colours 16 [--start 0 --duration 0]
 """
 
 import argparse
@@ -28,15 +42,8 @@ import sys
 import numpy as np
 from PIL import Image
 
-MAGIC = b"LOT1"
-VERSION = 1
-
-# Source grid resolution per frame. Frame is first scaled to SRC_W x SRC_H with
-# ffmpeg (area filter), then block-averaged down to SECTORS x BANDS.
-SECTORS = 32          # cells around the tunnel (one column of a frame)
-BANDS = 8             # cell rows per frame (depth slices of the tunnel)
-SRC_W = SECTORS * 10  # 320
-SRC_H = BANDS * 18    # 144 (keeps the 20:9 film aspect as a 3:1 grid of cells)
+MAGIC = b"LOT2"
+VERSION = 2
 
 
 def find_ffmpeg():
@@ -64,100 +71,134 @@ def probe_duration(ffmpeg, video):
     sys.exit("could not read video duration")
 
 
-def extract_frames(ffmpeg, video, count, duration):
-    """Returns a float array of shape (count, BANDS, SECTORS, 3) in 0..255."""
-    rate = count / duration
-    cmd = [
-        ffmpeg, "-hide_banner", "-loglevel", "error", "-i", video,
-        "-vf", "fps=%.6f,scale=%d:%d:flags=area" % (rate, SRC_W, SRC_H),
-        "-frames:v", str(count), "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
+def extract_frames(ffmpeg, video, start, duration, fps, cols, rows):
+    """Returns float array (frames, rows, cols, 3) of box-averaged colours in 0..255."""
+    cmd = [ffmpeg, "-hide_banner", "-loglevel", "error"]
+    if start > 0:
+        cmd += ["-ss", "%.3f" % start]
+    cmd += ["-i", video]
+    if duration > 0:
+        cmd += ["-t", "%.3f" % duration]
+    cmd += [
+        "-vf", "fps=%.6f,scale=%d:%d:flags=area" % (fps, cols, rows),
+        "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
     ]
     raw = subprocess.run(cmd, stdout=subprocess.PIPE, check=True).stdout
-    frame_bytes = SRC_W * SRC_H * 3
+    frame_bytes = cols * rows * 3
     n = len(raw) // frame_bytes
-    if n < count:
-        print("warning: decoded %d of %d requested frames" % (n, count))
+    if n == 0:
+        sys.exit("no frames decoded; check --start/--duration")
     frames = np.frombuffer(raw[: n * frame_bytes], dtype=np.uint8)
-    frames = frames.reshape(n, SRC_H, SRC_W, 3).astype(np.float32)
-    # Block-average SRC_H x SRC_W down to BANDS x SECTORS.
-    bh, bw = SRC_H // BANDS, SRC_W // SECTORS
-    cells = frames.reshape(n, BANDS, bh, SECTORS, bw, 3).mean(axis=(2, 4))
-    return cells
+    return frames.reshape(n, rows, cols, 3).astype(np.float32)
 
 
 def grade(cells):
-    """Lifts the (very dark) film footage: exposure from a robust peak + gamma +
-    a little saturation, so the flat polygons read clearly on a small LCD."""
+    """Lifts dark footage: exposure from a robust peak, gamma and a little saturation."""
     lum = cells.mean(axis=3)
-    peak = np.percentile(lum, 97.0)
-    peak = max(peak, 1.0)
+    peak = max(np.percentile(lum, 97.0), 1.0)
     x = np.clip(cells / peak, 0.0, 1.0) ** 0.45
     gray = x.mean(axis=3, keepdims=True)
-    x = gray + (x - gray) * 1.35  # saturation
+    x = gray + (x - gray) * 1.35
     return (np.clip(x, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
 
 
-def quantise(cells):
-    n, bands, sectors, _ = cells.shape
-    # Stack everything into one tall image so the palette is shared by all frames.
-    tall = cells.reshape(n * bands, sectors, 3)
-    img = Image.fromarray(tall, "RGB")
-    pal_img = img.quantize(colors=PALETTE, method=Image.MEDIANCUT, dither=Image.NONE)
-    palette = pal_img.getpalette()[: PALETTE * 3]
-    indices = np.array(pal_img, dtype=np.uint8).reshape(n, bands, sectors)
+def quantise(cells, colours):
+    n, rows, cols, _ = cells.shape
+    # One tall image so every frame shares the palette.
+    tall = Image.fromarray(cells.reshape(n * rows, cols, 3), "RGB")
+    pal_img = tall.quantize(colors=colours, method=Image.MEDIANCUT, dither=Image.NONE)
+    palette = pal_img.getpalette()[: colours * 3]
+    indices = np.array(pal_img, dtype=np.uint8).reshape(n, rows * cols)
     return palette, indices
 
 
-def write_blob(path, palette, indices):
-    frames, bands, sectors = indices.shape
-    colours = len(palette) // 3
+def pack(indices, bits):
+    """Packs (frames, cells) palette indices. 4-bit: two cells per byte, high nibble first."""
+    if bits == 8:
+        return indices.astype(np.uint8)
+    frames, cells = indices.shape
+    if cells % 2:
+        indices = np.concatenate([indices, np.zeros((frames, 1), np.uint8)], axis=1)
+    pairs = indices.reshape(frames, -1, 2)
+    return ((pairs[:, :, 0] << 4) | pairs[:, :, 1]).astype(np.uint8)
+
+
+def write_blob(path, palette, indices, bits, cols, rows, fps):
+    frames = indices.shape[0]
+    packed = pack(indices, bits)
     with open(path, "wb") as f:
         f.write(MAGIC)
-        f.write(struct.pack(">BBBBH", VERSION, colours, bands, sectors, frames))
+        f.write(struct.pack(">BBBBBBH", VERSION, bits, cols, rows,
+                            len(palette) // 3, fps, frames))
         f.write(bytes(palette))
-        f.write(indices.tobytes())
+        f.write(packed.tobytes())
+    return packed.shape[1]
 
 
-def write_preview(path, cells, palette, indices):
+def write_preview(path, palette, indices, cols, rows, count):
     pal = np.array(palette, dtype=np.uint8).reshape(-1, 3)
-    shown = pal[indices]  # quantised look, as seen on the device
-    n = shown.shape[0]
-    cols = 8
-    rows = (n + cols - 1) // cols
-    sheet = np.zeros((rows * BANDS, cols * SECTORS, 3), dtype=np.uint8)
-    for i in range(n):
-        r, c = divmod(i, cols)
-        sheet[r * BANDS:(r + 1) * BANDS, c * SECTORS:(c + 1) * SECTORS] = shown[i]
-    Image.fromarray(sheet, "RGB").resize((cols * SECTORS * 4, rows * BANDS * 4),
-                                         Image.NEAREST).save(path)
+    step = max(1, indices.shape[0] // count)
+    picks = list(range(0, indices.shape[0], step))[:count]
+    cols_sheet = 6
+    scale = 4
+    tile_h, tile_w = rows * scale, cols * scale
+    rows_sheet = (len(picks) + cols_sheet - 1) // cols_sheet
+    sheet = np.zeros((rows_sheet * (tile_h + 4), cols_sheet * (tile_w + 4), 3), dtype=np.uint8)
+    for i, f in enumerate(picks):
+        frame = pal[indices[f]].reshape(rows, cols, 3)
+        big = np.repeat(np.repeat(frame, scale, axis=0), scale, axis=1)
+        r, c = divmod(i, cols_sheet)
+        sheet[r * (tile_h + 4):r * (tile_h + 4) + tile_h,
+              c * (tile_w + 4):c * (tile_w + 4) + tile_w] = big
+    Image.fromarray(sheet, "RGB").save(path)
 
 
 def main():
-    global PALETTE
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--video", required=True)
     ap.add_argument("--out", default="res/lotus.bin")
-    ap.add_argument("--frames", type=int, default=96)
-    ap.add_argument("--palette", type=int, default=64, help="2..255 colours")
+    ap.add_argument("--start", type=float, default=0.0, help="start time in seconds")
+    ap.add_argument("--duration", type=float, default=0.0,
+                    help="length in seconds (0 = until the end of the video)")
+    ap.add_argument("--fps", type=int, default=6, help="playback frames per second (1..60)")
+    ap.add_argument("--cols", type=int, default=40, help="grid columns (cells per frame)")
+    ap.add_argument("--rows", type=int, default=22, help="grid rows (cells per frame)")
+    ap.add_argument("--colours", type=int, default=16, help="palette size, 2..255")
     ap.add_argument("--preview", help="optional PNG contact sheet of the result")
     args = ap.parse_args()
-    PALETTE = max(2, min(255, args.palette))
+
+    if not 1 <= args.fps <= 60:
+        sys.exit("--fps must be 1..60")
+    if not 2 <= args.colours <= 255:
+        sys.exit("--colours must be 2..255")
+    if not (1 <= args.cols <= 255 and 1 <= args.rows <= 255):
+        sys.exit("--cols/--rows must be 1..255")
+    bits = 4 if args.colours <= 16 else 8
+    colours = min(args.colours, 16) if bits == 4 else args.colours
 
     ffmpeg = find_ffmpeg()
-    duration = probe_duration(ffmpeg, args.video)
-    print("video: %s (%.2f s)" % (args.video, duration))
+    if args.duration <= 0:
+        duration = probe_duration(ffmpeg, args.video) - args.start
+    else:
+        duration = args.duration
+    print("video: %s, range %.2f s .. %.2f s at %d fps" %
+          (args.video, args.start, args.start + duration, args.fps))
 
-    cells = extract_frames(ffmpeg, args.video, args.frames, duration)
-    print("sampled %d frames -> %d bands x %d sectors each" % (cells.shape[0], BANDS, SECTORS))
+    cells = extract_frames(ffmpeg, args.video, args.start, duration,
+                           args.fps, args.cols, args.rows)
+    if cells.shape[0] > 65535:
+        sys.exit("too many frames for the u16 counter; shorten --duration or lower --fps")
+    print("sampled %d frames of %dx%d cells" % (cells.shape[0], args.cols, args.rows))
 
     graded = grade(cells)
-    palette, indices = quantise(graded)
-    write_blob(args.out, palette, indices)
-    size = 4 + 6 + len(palette) + indices.size
-    print("wrote %s (%d bytes, %d colours)" % (args.out, size, len(palette) // 3))
+    palette, indices = quantise(graded, colours)
+    frame_bytes = write_blob(args.out, palette, indices, bits, args.cols, args.rows, args.fps)
+    total = 4 + 8 + len(palette) + cells.shape[0] * frame_bytes
+    print("wrote %s: %d frames, %d bytes per frame, %d colours (%d-bit), %d bytes total" %
+          (args.out, cells.shape[0], frame_bytes, len(palette) // 3, bits, total))
     if args.preview:
-        write_preview(args.preview, graded, palette, indices)
+        write_preview(args.preview, palette, indices, args.cols, args.rows, 24)
         print("preview: %s" % args.preview)
 
 
