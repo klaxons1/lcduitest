@@ -1,0 +1,7 @@
+Твоя задача извлечь кадры из видео, сделать на j2me анимацию с рендером одноцветных полигонов красивую, вставить миди чтоб проигрывалась на фоне. анимация должна напоминать demoscene eon the black lotus. midp библиотеки возьми из репозитория l2d-m3g что у меня, 
+
+https://github.com/klaxons1/tools_linux_jdk8
+
+https://github.com/TASEmulators/freej2me-plus
+
+https://nikita36078.github.io/J2ME_Docs/docs/midp-2.0/
