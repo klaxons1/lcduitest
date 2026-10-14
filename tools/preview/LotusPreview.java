@@ -18,8 +18,8 @@ public class LotusPreview {
         int h = Integer.parseInt(args[2]);
 
         LotusFilm film = new LotusFilm(LotusFilm.class);
-        System.out.println("film: " + film.frames + " frames, " + film.cols + "x" + film.rows
-                + " cells, " + film.fps + " fps, " + film.colours + " colours");
+        System.out.println("film: " + film.frames + " frames, "
+                + " triangles, " + film.fps + " fps, " + film.vertexCount + " vertices");
 
         int[] fb = new int[w * h];
         for (int a = 3; a < args.length; a++) {

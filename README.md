@@ -1,50 +1,46 @@
-# lcduitest — J2ME "Lotus" film
+# lcduitest — J2ME "Lotus" facet film
 
-MIDP 2.0 / CLDC 1.1 MIDlet suite. `LotusDemo` (MIDlet-1) plays the video
-`docs/Phantasm Mineshaft Chase scene.mp4` as a film:
+MIDP 2.0 / CLDC 1.1 MIDlet suite, one MIDlet (`LotusDemo`, suite name "Lotus"). It starts the film
+right away, full screen 240×320:
 
-- every frame of the video is a grid of 40×22 cells;
-- every cell is drawn as one single-colour quad polygon, so the frame is a mosaic of flat colours;
-- frames play back at 6 fps (the film's own clock, looping);
-- `res/phantasm-8bit.mid` loops in the background (MMAPI `audio/midi`).
-
-`LCDUITester` (MIDlet-2) is the original test MIDlet and is unchanged.
+- the video `docs/Phantasm Mineshaft Chase scene.mp4` is cropped to the screen aspect and fills it;
+- a jittered triangle mesh covers the screen (18×24 cells, 864 triangles, irregular facets);
+- every triangle is drawn in one flat colour taken from the video frame under it;
+- frames play at 6 fps, the film loops;
+- `res/phantasm-8bit.mid` loops in the background (MMAPI `audio/midi`). Soft key "Music on/off" toggles it.
 
 ## Layout
 
 | Path | What |
 |------|------|
-| `src/LotusDemo.java` | MIDlet: lifecycle, background MIDI, Exit / Music on-off command |
+| `src/LotusDemo.java` | MIDlet: lifecycle, background MIDI, Exit and Music on/off commands |
 | `src/LotusCanvas.java` | Canvas and playback thread; redraws only when the film moves to a new frame |
-| `src/LotusFilm.java` | Streams `res/lotus.bin`, decodes cells, draws the frame as single-colour quads |
-| `res/lotus.bin` | 962 frames × 40×22 cells, 16-colour palette, 4-bit packed (generated) |
-| `tools/make_lotus_data.py` | Video → `res/lotus.bin` |
+| `src/LotusFilm.java` | Streams `res/lotus.bin`, rebuilds the mesh, draws each triangle as a flat-colour polygon |
+| `res/lotus.bin` | Format LOT3: static mesh + 962 frames of 4-bit triangle colours (generated) |
+| `tools/make_lotus_data.py` | Video → `res/lotus.bin` (mesh, colour sampling, palette) |
 | `tools/preview/LotusPreview.java` | Desktop PNG preview of the frame renderer |
 | `libs/cldc11.jar`, `libs/midp21.jar` | CLDC 1.1 / MIDP 2.1 APIs (from `klaxons1/l2d_m3g`) |
 | `build.sh` | Builds `deployed/raw/lcduitest.jar` and `.jad` |
 | `releases/` | Committed build artifacts (see `releases/README.md`) |
 
-## Data format (`LOT2`)
+## Data format (LOT3)
 
-Header: magic `LOT2`, version, bits per cell (4), cols, rows, palette size, fps, frame count (u16),
-then the palette (RGB) and the packed frames one after another. The device streams the frames
-from the jar, so only one packed frame (440 bytes) is held in memory.
+Header, then the vertices (normalised 0..1024, scaled to the screen on the device), the triangles
+(vertex indices), the palette, and the packed frames one after another: one 4-bit colour per
+triangle, so 432 bytes per frame. The device streams the frames from the jar.
 
 ## Regenerating the film data
 
 ```sh
 pip install numpy pillow imageio-ffmpeg
 python3 tools/make_lotus_data.py --video "docs/Phantasm Mineshaft Chase scene.mp4" \
-    --out res/lotus.bin --fps 6 --cols 40 --rows 22 --colours 16
+    --out res/lotus.bin --fps 6 --cols 18 --rows 24 --colours 16 --fit crop
 ```
 
-Options: `--start` / `--duration` select a part of the video; `--fps` sets the playback rate
-(size scales with fps × duration); `--cols` / `--rows` set the cell grid (more cells means more
-detail and more bytes); `--colours` up to 255 (above 16 colours each cell takes 8 bits).
+Options: `--fit crop` (default) keeps the aspect ratio and fills the screen, `--fit stretch`
+squeezes the whole frame instead; `--cols`/`--rows` set the mesh density; `--jitter` and `--seed`
+change the facet shapes; `--start`/`--duration` select a part of the video; `--fps` sets the rate.
 The decoded frames are not stored in git.
-
-Measured for the full clip (160 s): 40×22 at 6 fps is 423 KB raw, about 128 KB deflated in the jar.
-48×27 at 8 fps is 831 KB raw, about 234 KB deflated.
 
 ## Build
 
@@ -59,5 +55,5 @@ CLDC/MIDP APIs can be used.
 
 ```sh
 javac -d /tmp/desk src/LotusFilm.java tools/preview/LotusPreview.java
-java -cp /tmp/desk:res LotusPreview /tmp/preview 176 208 0 300 600
+java -cp /tmp/desk:res LotusPreview /tmp/preview 240 320 0 300 600
 ```
