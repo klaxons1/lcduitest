@@ -26,6 +26,8 @@ right away, full screen 240×320:
 | `tools/preview/LotusPreview.java` | Desktop PNG preview: environment grid plus people triangles |
 | `libs/cldc11.jar`, `libs/midp21.jar` | CLDC 1.1 / MIDP 2.1 APIs (from `klaxons1/l2d_m3g`) |
 | `build.sh` | Builds `deployed/raw/lcduitest.jar` and `.jad` |
+| `tools/fetch_j2me_tools.sh` | Clones `klaxons1/j2me_cldc` and builds the preverifier (and, with `KVM=1`, the KVM) into `build/j2me/` |
+| `tools/kvm/check_film.sh` | Runs `LotusFilm` on the CLDC KVM and on the desktop JVM, compares checksums |
 | `releases/` | Committed build artifacts (see `releases/README.md`) |
 
 ## How a frame is modelled
@@ -82,6 +84,23 @@ JAVA_HOME=/path/to/jdk8 ./build.sh   # or plain `./build.sh` if javac is on PATH
 
 The build uses JDK 8 with `-source/-target 1.3` against the CLDC/MIDP bootclasspath, so only
 CLDC/MIDP APIs can be used.
+
+The classes are run through the CLDC preverifier before they go into the jar. `build.sh` builds it
+on first use with `tools/fetch_j2me_tools.sh`, which clones `klaxons1/j2me_cldc` (depth 1) into
+`build/j2me_cldc`, applies the portability fixes needed on a modern 64-bit gcc, and writes
+`build/j2me/preverify`. Nothing from that repository is committed here. Needs `git`, `gcc`, `make`.
+
+## Checking the decoder on the CLDC KVM
+
+```sh
+KVM=1 JAVA_HOME=/path/to/jdk8 tools/fetch_j2me_tools.sh   # preverifier + KVM (x86_64)
+JAVA_HOME=/path/to/jdk8 tools/kvm/check_film.sh
+```
+
+`tools/kvm/check_film.sh` compiles `LotusFilm` and `tools/kvm/KvmCheck.java` for CLDC, preverifies them,
+runs them on the KVM (`build/j2me/kvm`) and on the desktop JVM, and compares the checksums over a
+fixed sequence of frame seeks. The current `res/lotus.bin` gives 802 frames, 48×64, on both (checksum
+`-5172562275176302463`).
 
 ## Desktop preview
 
