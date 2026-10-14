@@ -330,13 +330,61 @@ def triangles_of(leaf):
     return ((x0, y0), (x1, y0), (x0, y1)), ((x1, y0), (x1, y1), (x0, y1))
 
 
-def quantise(colours, count):
-    """Palette and indices for an (N, 3) float array of colours."""
-    arr = np.clip(np.asarray(colours, dtype=np.float64) + 0.5, 0, 255).astype(np.uint8)
-    tall = Image.fromarray(arr.reshape(-1, 1, 3), "RGB")
-    pal_img = tall.quantize(colors=count, method=Image.MEDIANCUT, dither=Image.NONE)
-    palette = pal_img.getpalette()[: count * 3]
-    indices = np.array(pal_img, dtype=np.uint8).reshape(-1)
+def kmeans(points, k, iters=25, seed=1, sample=200000):
+    """Lloyd k-means with k-means++ seeding on a fixed-seed subsample. points: (N, 3) float."""
+    rng = np.random.default_rng(seed)
+    pts = points
+    if len(pts) > sample:
+        pts = pts[rng.choice(len(pts), sample, replace=False)]
+    cent = [pts[rng.integers(len(pts))]]
+    d2 = ((pts - cent[0]) ** 2).sum(1)
+    for _ in range(1, k):
+        total = d2.sum()
+        p = d2 / total if total > 0 else None
+        cent.append(pts[rng.choice(len(pts), p=p)])
+        d2 = np.minimum(d2, ((pts - cent[-1]) ** 2).sum(1))
+    cent = np.array(cent)
+    for _ in range(iters):
+        lab = nearest(pts, cent)
+        new = cent.copy()
+        for j in range(k):
+            sel = pts[lab == j]
+            if len(sel):
+                new[j] = sel.mean(0)
+        done = np.abs(new - cent).max() < 1e-3
+        cent = new
+        if done:
+            break
+    return cent
+
+
+def nearest(points, cent, chunk=500000):
+    """Index of the nearest centre for each point (squared Euclidean distance)."""
+    out = np.empty(len(points), dtype=np.int64)
+    c2 = (cent ** 2).sum(1)
+    for s in range(0, len(points), chunk):
+        p = points[s:s + chunk]
+        d = (p ** 2).sum(1)[:, None] - 2.0 * (p @ cent.T) + c2[None, :]
+        out[s:s + chunk] = d.argmin(1)
+    return out
+
+
+def quantise(colours, count, method="kmeans"):
+    """Palette (count * 3 bytes) and indices for an (N, 3) float array of colours.
+
+    "kmeans": k-means over all colours, palette entries rounded to bytes, every colour assigned to
+    its nearest entry. "mediancut": Pillow's median cut, as before.
+    """
+    arr = np.clip(np.asarray(colours, dtype=np.float64) + 0.5, 0, 255)
+    if method == "mediancut":
+        tall = Image.fromarray(arr.astype(np.uint8).reshape(-1, 1, 3), "RGB")
+        pal_img = tall.quantize(colors=count, method=Image.MEDIANCUT, dither=Image.NONE)
+        palette = pal_img.getpalette()[: count * 3]
+        indices = np.array(pal_img, dtype=np.uint8).reshape(-1)
+        return palette, indices
+    cent = np.clip(np.round(kmeans(arr, count)), 0, 255)
+    indices = nearest(arr, cent).astype(np.uint8)
+    palette = cent.astype(np.uint8).reshape(-1).tolist()
     return palette, indices
 
 
@@ -359,6 +407,8 @@ def main():
     ap.add_argument("--min-cell", type=int, default=8, help="smallest people leaf in pixels (>=2)")
     ap.add_argument("--max-cell", type=int, default=96, help="largest people leaf in pixels")
     ap.add_argument("--colours", type=int, default=64, help="people palette size, 2..255")
+    ap.add_argument("--quantiser", choices=["kmeans", "mediancut"], default="mediancut",
+                    help="how the two palettes are chosen (default: mediancut, as before)")
     ap.add_argument("--fit", choices=["crop", "stretch"], default="crop")
     ap.add_argument("--preview", help="optional PNG contact sheet of the result")
     args = ap.parse_args()
@@ -414,7 +464,7 @@ def main():
 
     # Environment palette over every environment triangle of the film.
     env_all = np.concatenate([env for env, _, _ in frames], axis=0)
-    env_palette, env_indices = quantise(env_all, args.env_colours)
+    env_palette, env_indices = quantise(env_all, args.env_colours, args.quantiser)
 
     # People palette over the people leaf colours only.
     people_cols = []
@@ -423,7 +473,8 @@ def main():
             people_cols.append(leaf[5])
             people_cols.append(leaf[6])
     if people_cols:
-        people_palette, people_indices = quantise(np.array(people_cols), args.colours)
+        people_palette, people_indices = quantise(np.array(people_cols), args.colours,
+                                                 args.quantiser)
     else:
         people_palette, people_indices = [0, 0, 0], np.zeros(0, dtype=np.uint8)
 
