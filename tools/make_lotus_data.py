@@ -407,8 +407,8 @@ def main():
     ap.add_argument("--min-cell", type=int, default=8, help="smallest people leaf in pixels (>=2)")
     ap.add_argument("--max-cell", type=int, default=96, help="largest people leaf in pixels")
     ap.add_argument("--colours", type=int, default=64, help="people palette size, 2..255")
-    ap.add_argument("--quantiser", choices=["kmeans", "mediancut"], default="mediancut",
-                    help="how the two palettes are chosen (default: mediancut, as before)")
+    ap.add_argument("--quantiser", choices=["kmeans", "mediancut"], default="kmeans",
+                    help="how the two palettes are chosen: k-means (default) or Pillow median cut")
     ap.add_argument("--fit", choices=["crop", "stretch"], default="crop")
     ap.add_argument("--preview", help="optional PNG contact sheet of the result")
     args = ap.parse_args()

@@ -67,7 +67,7 @@ python3 tools/make_lotus_data.py --video "docs/Phantasm Mineshaft Chase scene.mp
 
 Options: `--env-cols` / `--env-rows` (grid size; more cells = more triangles per frame),
 `--env-colours` (environment palette, up to 16), `--people` (people markup), `--colours` (people
-palette), `--detail` (lower = more people triangles), `--min-cell` / `--max-cell` (smallest and
+palette), `--quantiser kmeans|mediancut` (how the palettes are chosen; k-means is the default), `--detail` (lower = more people triangles), `--min-cell` / `--max-cell` (smallest and
 largest people triangle cell in pixels), `--fps`, `--fit crop|stretch` (crop keeps the aspect ratio
 and fills the screen), `--start` / `--duration` to pick a part of the video, `--preview` for a PNG
 sheet. With the settings above, the full clip (160 s) is 3.3 MB. The decoded frames are not stored
@@ -100,7 +100,7 @@ JAVA_HOME=/path/to/jdk8 tools/kvm/check_film.sh
 `tools/kvm/check_film.sh` compiles `LotusFilm` and `tools/kvm/KvmCheck.java` for CLDC, preverifies them,
 runs them on the KVM (`build/j2me/kvm`) and on the desktop JVM, and compares the checksums over a
 fixed sequence of frame seeks. The current `res/lotus.bin` gives 802 frames, 48×64, on both (checksum
-`-5172562275176302463`).
+`-4813869635932958945`).
 
 ## Desktop preview
 
