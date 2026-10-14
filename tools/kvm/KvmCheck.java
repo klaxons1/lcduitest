@@ -9,6 +9,24 @@ public class KvmCheck {
         }
         System.out.println("frames=" + f.frames + " grid=" + f.cols + "x" + f.rows
                 + " fps=" + f.fps + " checksum=" + acc);
+
+        // Decode time: every frame in order, as playback does it (state carried frame to frame).
+        long t0 = System.currentTimeMillis();
+        for (int i = 0; i < f.frames; i++) {
+            f.seek(i);
+        }
+        System.out.println("decode_all_ms=" + (System.currentTimeMillis() - t0));
+
+        // Hash of the environment colours of every frame, to compare with the encoder's data.
+        long envHash = 0;
+        for (int i = 0; i < f.frames; i++) {
+            f.seek(i);
+            for (int c = 0; c < f.cols * f.rows; c++) {
+                envHash = envHash * 31 + f.envColour(c, 0);
+                envHash = envHash * 31 + f.envColour(c, 1);
+            }
+        }
+        System.out.println("env_hash=" + envHash);
     }
 
     static long checksum(LotusFilm f) {

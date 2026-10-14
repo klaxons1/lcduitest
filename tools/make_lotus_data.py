@@ -8,6 +8,8 @@ Each frame has two layers, both made of flat-coloured triangles:
     Every cell is cut into two triangles along its TL-BR diagonal, and each triangle is one
     colour: the mean of the video pixels under it (people pixels excluded when possible). The
     colours come from a shared palette of 16 entries (4 bits per triangle, as in the quad film).
+    A triangle keeps its previous colour index while that colour stays within --hysteresis of the
+    best one, which means less flicker and a more compressible film.
   * People: an adaptive quadtree restricted to the people regions, which are marked by hand in
     tools/lotus/people_keyframes.json (ellipses on keyframes every 3 seconds). Between keyframes
     the ellipses are interpolated (or the nearest keyframe is held when the number of people
@@ -330,35 +332,43 @@ def triangles_of(leaf):
     return ((x0, y0), (x1, y0), (x0, y1)), ((x1, y0), (x1, y1), (x0, y1))
 
 
-def kmeans(points, k, iters=25, seed=1, sample=200000):
-    """Lloyd k-means with k-means++ seeding on a fixed-seed subsample. points: (N, 3) float."""
+def kmeans(points, k, iters=25, seed=1, weights=None, init=None):
+    """Lloyd k-means (squared Euclidean). points: (N, 3) float; weights: (N,) or None.
+
+    init: (k, 3) starting centres (warm start), or None for k-means++ seeding. An empty cluster
+    keeps its previous centre. Returns (k, 3) float centres.
+    """
     rng = np.random.default_rng(seed)
-    pts = points
-    if len(pts) > sample:
-        pts = pts[rng.choice(len(pts), sample, replace=False)]
-    cent = [pts[rng.integers(len(pts))]]
-    d2 = ((pts - cent[0]) ** 2).sum(1)
-    for _ in range(1, k):
-        total = d2.sum()
-        p = d2 / total if total > 0 else None
-        cent.append(pts[rng.choice(len(pts), p=p)])
-        d2 = np.minimum(d2, ((pts - cent[-1]) ** 2).sum(1))
-    cent = np.array(cent)
+    pts = np.asarray(points, dtype=np.float64)
+    w = np.ones(len(pts)) if weights is None else np.asarray(weights, dtype=np.float64)
+    if init is not None:
+        cent = np.array(init, dtype=np.float64)
+    else:
+        cent = np.empty((k, 3))
+        cent[0] = pts[rng.choice(len(pts), p=w / w.sum())]
+        d2 = ((pts - cent[0]) ** 2).sum(1)
+        for j in range(1, k):
+            p = w * d2
+            total = p.sum()
+            idx = rng.choice(len(pts), p=p / total) if total > 0 else rng.integers(len(pts))
+            cent[j] = pts[idx]
+            d2 = np.minimum(d2, ((pts - cent[j]) ** 2).sum(1))
     for _ in range(iters):
         lab = nearest(pts, cent)
+        wsum = np.bincount(lab, weights=w, minlength=k)
         new = cent.copy()
-        for j in range(k):
-            sel = pts[lab == j]
-            if len(sel):
-                new[j] = sel.mean(0)
-        done = np.abs(new - cent).max() < 1e-3
+        for c in range(3):
+            total = np.bincount(lab, weights=w * pts[:, c], minlength=k)
+            ok = wsum > 0
+            new[ok, c] = total[ok] / wsum[ok]
+        moved = np.abs(new - cent).max()
         cent = new
-        if done:
+        if moved < 1e-3:
             break
     return cent
 
 
-def nearest(points, cent, chunk=500000):
+def nearest(points, cent, chunk=100000):
     """Index of the nearest centre for each point (squared Euclidean distance)."""
     out = np.empty(len(points), dtype=np.int64)
     c2 = (cent ** 2).sum(1)
@@ -369,11 +379,17 @@ def nearest(points, cent, chunk=500000):
     return out
 
 
-def quantise(colours, count, method="kmeans"):
-    """Palette (count * 3 bytes) and indices for an (N, 3) float array of colours.
+def distances(points, cent):
+    """Euclidean distance from every point to every centre: (N, k)."""
+    diff = points[:, None, :] - cent[None, :, :]
+    return np.sqrt((diff * diff).sum(2))
 
-    "kmeans": k-means over all colours, palette entries rounded to bytes, every colour assigned to
-    its nearest entry. "mediancut": Pillow's median cut, as before.
+
+def quantise(colours, count, method="kmeans", weights=None):
+    """Palette (count * 3 bytes) and indices for an (N, 3) array of colours.
+
+    "kmeans": k-means (optionally weighted), entries rounded to bytes, each colour assigned to its
+    nearest entry. "mediancut": Pillow's median cut, unweighted, as before.
     """
     arr = np.clip(np.asarray(colours, dtype=np.float64) + 0.5, 0, 255)
     if method == "mediancut":
@@ -382,10 +398,36 @@ def quantise(colours, count, method="kmeans"):
         palette = pal_img.getpalette()[: count * 3]
         indices = np.array(pal_img, dtype=np.uint8).reshape(-1)
         return palette, indices
-    cent = np.clip(np.round(kmeans(arr, count)), 0, 255)
+    cent = np.clip(np.round(kmeans(arr, count, weights=weights)), 0, 255)
     indices = nearest(arr, cent).astype(np.uint8)
     palette = cent.astype(np.uint8).reshape(-1).tolist()
     return palette, indices
+
+
+def stable_indices(colours, palette, frame_count, tri_count, hysteresis):
+    """Palette index of every triangle of every frame (frame-major, like `colours`).
+
+    Each triangle takes its nearest palette entry, except that it keeps its previous frame's index
+    while that entry is within `hysteresis` (RGB distance) of the best one. Less flicker, and the
+    index stream repeats more, so the jar compresses better.
+    """
+    pal = np.array(palette, dtype=np.float64).reshape(-1, 3)
+    arr = np.clip(np.asarray(colours, dtype=np.float64) + 0.5, 0, 255)
+    out = np.empty(len(arr), dtype=np.uint8)
+    rows_ = np.arange(tri_count)
+    prev = None
+    for f in range(frame_count):
+        chunk = arr[f * tri_count:(f + 1) * tri_count]
+        dist = distances(chunk, pal)
+        best = dist.argmin(1)
+        if prev is None or hysteresis <= 0:
+            idx = best
+        else:
+            keep = dist[rows_, prev] <= dist.min(1) + hysteresis
+            idx = np.where(keep, prev, best)
+        out[f * tri_count:(f + 1) * tri_count] = idx
+        prev = idx
+    return out
 
 
 def main():
@@ -407,6 +449,9 @@ def main():
     ap.add_argument("--min-cell", type=int, default=8, help="smallest people leaf in pixels (>=2)")
     ap.add_argument("--max-cell", type=int, default=96, help="largest people leaf in pixels")
     ap.add_argument("--colours", type=int, default=64, help="people palette size, 2..255")
+    ap.add_argument("--hysteresis", type=float, default=8.0,
+                    help="environment: a triangle keeps its previous colour index while that colour "
+                         "is within this RGB distance of the best one (default 8; 0 = off)")
     ap.add_argument("--quantiser", choices=["kmeans", "mediancut"], default="kmeans",
                     help="how the two palettes are chosen: k-means (default) or Pillow median cut")
     ap.add_argument("--fit", choices=["crop", "stretch"], default="crop")
@@ -425,6 +470,8 @@ def main():
         sys.exit("--min-cell must be 2..60")
     if args.max_cell < args.min_cell:
         sys.exit("--max-cell must be >= --min-cell")
+    if args.hysteresis < 0:
+        sys.exit("--hysteresis must be >= 0")
 
     people = People(args.people)
     ffmpeg = find_ffmpeg()
@@ -464,17 +511,23 @@ def main():
 
     # Environment palette over every environment triangle of the film.
     env_all = np.concatenate([env for env, _, _ in frames], axis=0)
-    env_palette, env_indices = quantise(env_all, args.env_colours, args.quantiser)
+    env_palette, _ = quantise(env_all, args.env_colours, args.quantiser)
+    env_indices = stable_indices(env_all, env_palette, len(frames), tri_count, args.hysteresis)
 
-    # People palette over the people leaf colours only.
+    # People palette over the people leaf colours only. Each triangle is weighted by its area, so
+    # big triangles decide the palette more than small ones.
     people_cols = []
+    people_w = []
     for _, _, leaves in frames:
         for leaf in leaves:
+            area = 0.5 * (leaf[2] - leaf[0]) * (leaf[3] - leaf[1])
             people_cols.append(leaf[5])
             people_cols.append(leaf[6])
+            people_w.append(area)
+            people_w.append(area)
     if people_cols:
         people_palette, people_indices = quantise(np.array(people_cols), args.colours,
-                                                 args.quantiser)
+                                                 args.quantiser, np.array(people_w))
     else:
         people_palette, people_indices = [0, 0, 0], np.zeros(0, dtype=np.uint8)
 

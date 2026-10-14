@@ -26,19 +26,19 @@ mkdir -p "$B/cls" "$B/pv" "$B/desk" "$B/cldc"
 
 # CLDC side: compile to 1.3 bytecode against the CLDC API, preverify, run in the KVM.
 "$JAVAC" -nowarn -source 1.3 -target 1.3 -bootclasspath "$ROOT/libs/cldc11.jar" \
-    -d "$B/cls" "$ROOT/src/LotusFilm.java" "$ROOT/tools/kvm/KvmCheck.java" 2>/dev/null
+    -d "$B/cls" "$ROOT/src/LotusFilm.java" "$ROOT/tools/kvm/KvmCheck.java"
 "$PREVERIFY" -classpath "$B/cldc" -d "$B/pv" "$B/cls"
 cp "$ROOT/res/lotus.bin" "$B/pv/"
 KVM_OUT=$(cd "$B/pv" && timeout 300 "$KVM" -heapsize 8m KvmCheck)
 echo "kvm:     $KVM_OUT"
 
 # Desktop side: same sources, normal JVM, resource from res/.
-"$JAVAC" -nowarn -d "$B/desk" "$ROOT/src/LotusFilm.java" "$ROOT/tools/kvm/KvmCheck.java" 2>/dev/null
+"$JAVAC" -nowarn -d "$B/desk" "$ROOT/src/LotusFilm.java" "$ROOT/tools/kvm/KvmCheck.java"
 DESK_OUT=$("$JAVA" -cp "$B/desk:$ROOT/res" KvmCheck)
 echo "desktop: $DESK_OUT"
 
-K=$(echo "$KVM_OUT" | sed 's/.*checksum=//')
-D=$(echo "$DESK_OUT" | sed 's/.*checksum=//')
+K=$(echo "$KVM_OUT" | sed -n 's/.*checksum=//p')
+D=$(echo "$DESK_OUT" | sed -n 's/.*checksum=//p')
 if [ -z "$K" ] || [ "$K" != "$D" ]; then
     echo "check_film: FAIL, checksums differ" >&2
     exit 1
