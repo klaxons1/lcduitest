@@ -5,11 +5,11 @@ right away, full screen 240×320:
 
 - the video `docs/Phantasm Mineshaft Chase scene.mp4` is cropped to the screen aspect and fills it;
 - every frame is a mosaic of flat-coloured triangles in two layers:
-  - **environment**: a uniform grid of 30×40 cells (8×8 px), each cell cut into two triangles, each
-    triangle with its own colour from a 16-colour palette (2400 triangles per frame);
-  - **people**: smaller triangles (adaptive quadtree, about 66 leaves on average, up to 162) drawn on
-    top, following outlines and details, with a 64-colour palette; the regions are marked by hand on
-    keyframes every 3 s (`tools/lotus/people_keyframes.json`);
+  - **environment**: a uniform grid of 48×64 cells (5×5 px), each cell cut into two triangles, each
+    triangle with its own colour from a 16-colour palette (6144 triangles per frame);
+  - **people**: small triangles (adaptive quadtree, down to 4 px, about 417 leaves on average, up to
+    1159) drawn on top, following outlines and details, with a 64-colour palette; the regions are
+    marked by hand on keyframes every 3 s (`tools/lotus/people_keyframes.json`);
 - frames play at 5 fps, the film loops;
 - `res/phantasm-8bit.mid` loops in the background (MMAPI `audio/midi`). Soft key "Music on/off" toggles it.
 
@@ -20,7 +20,7 @@ right away, full screen 240×320:
 | `src/LotusDemo.java` | MIDlet: lifecycle, background MIDI, Exit and Music on/off commands |
 | `src/LotusCanvas.java` | Canvas and playback thread: draws the environment grid, then the people triangles (`fillTriangle`) |
 | `src/LotusFilm.java` | Streams `res/lotus.bin` and decodes each frame: environment colour nibbles and the people tree |
-| `res/lotus.bin` | Format LOT7: 802 frames, each an environment grid and a people tree (generated, ~1.1 MB) |
+| `res/lotus.bin` | Format LOT7: 802 frames, each an environment grid and a people tree (generated, ~3.3 MB) |
 | `tools/make_lotus_data.py` | Video + people markup → `res/lotus.bin` (environment grid, people quadtree, two palettes) |
 | `tools/lotus/people_keyframes.json` | Manual people markup: ellipses `[cx, cy, rx, ry]` on keyframes 0–53 (every 3 s), in 240×320 |
 | `tools/preview/LotusPreview.java` | Desktop PNG preview: environment grid plus people triangles |
@@ -31,7 +31,7 @@ right away, full screen 240×320:
 ## How a frame is modelled
 
 1. **Environment.** The whole frame is graded (shared exposure, gamma, a little saturation). The
-   screen is divided into a uniform grid of `--env-cols` × `--env-rows` cells (30×40 by default).
+   screen is divided into a uniform grid of `--env-cols` × `--env-rows` cells (48×64 in the current build).
    Each cell is cut along its TL-BR diagonal into an upper-right and a lower-left triangle. Each
    triangle takes the mean colour of its pixels (people pixels excluded when possible), quantised to
    a 16-colour palette shared by the whole film.
@@ -59,8 +59,8 @@ decoded.
 pip install numpy pillow imageio-ffmpeg
 python3 tools/make_lotus_data.py --video "docs/Phantasm Mineshaft Chase scene.mp4" \
     --out res/lotus.bin --fps 5 --people tools/lotus/people_keyframes.json \
-    --env-cols 30 --env-rows 40 --env-colours 16 \
-    --detail 20 --min-cell 8 --max-cell 96 --colours 64
+    --env-cols 48 --env-rows 64 --env-colours 16 \
+    --detail 15 --min-cell 4 --max-cell 32 --colours 64
 ```
 
 Options: `--env-cols` / `--env-rows` (grid size; more cells = more triangles per frame),
@@ -68,7 +68,7 @@ Options: `--env-cols` / `--env-rows` (grid size; more cells = more triangles per
 palette), `--detail` (lower = more people triangles), `--min-cell` / `--max-cell` (smallest and
 largest people triangle cell in pixels), `--fps`, `--fit crop|stretch` (crop keeps the aspect ratio
 and fills the screen), `--start` / `--duration` to pick a part of the video, `--preview` for a PNG
-sheet. With the settings above, the full clip (160 s) is 1.1 MB. The decoded frames are not stored
+sheet. With the settings above, the full clip (160 s) is 3.3 MB. The decoded frames are not stored
 in git.
 
 To edit the people markup, change the ellipses in `tools/lotus/people_keyframes.json` (keyframe `k`
