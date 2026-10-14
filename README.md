@@ -29,6 +29,10 @@ right away, full screen 240×320:
 | `build.sh` | Builds `deployed/raw/lcduitest.jar` and `.jad` |
 | `tools/fetch_j2me_tools.sh` | Clones `klaxons1/j2me_cldc` and builds the preverifier (and, with `KVM=1`, the KVM) into `build/j2me/` |
 | `tools/kvm/check_film.sh` | Runs `LotusFilm` on the CLDC KVM and on the desktop JVM, compares checksums |
+| `res/phantasm-8bit.mid` | Background music (4 tracks, 100 BPM, 3:19); comments added as Text events, playback unchanged |
+| `tools/comment_midi.py` | Adds comments (tracks, instruments, tempo, length) to a MIDI file and checks that the playback events did not change |
+| `audio/film-soundtrack-amrnb-12k2.amr` | Film soundtrack, AMR-NB 12.2 kbps, 8 kHz mono, 160 s, 256 678 bytes (generated, see below) |
+| `tools/make_film_audio.py` | Film audio track → AMR-NB 12.2 kbps, with the processing described below |
 | `releases/` | Committed build artifacts (see `releases/README.md`) |
 
 ## How a frame is modelled
@@ -69,6 +73,33 @@ and the payload:
 The tree has, for each node, a "present" bit (0 = no people in this node), a "split" bit where the
 node can split, and a "diagonal" bit per leaf. The device streams the frames from the jar and draws
 each frame as it is decoded. Skipped frames are still read so the palette stays in step.
+
+## Film soundtrack (AMR-NB)
+
+`tools/make_film_audio.py` takes the audio of `docs/Phantasm Mineshaft Chase scene.mp4` (AAC 44.1 kHz
+stereo) and writes `audio/film-soundtrack-amrnb-12k2.amr`, a raw AMR-NB file (`#!AMR` header, 8 kHz
+mono, the 12.2 kbps mode, DTX off). The chain works within the AMR-NB band (about 200–3400 Hz):
+
+1. Downmix to mono (mid = (L + R) / 2).
+2. Bass: the part below 200 Hz holds about 40% of the energy, which AMR-NB cannot reproduce. A
+   harmonic layer is generated from it (tanh waveshaping, 200–900 Hz, 14 dB under the bass), so the
+   bass is heard through its harmonics. Then a 150 Hz high-pass.
+3. Resample to 8 kHz with a Kaiser-windowed polyphase filter.
+4. Compressor (3:1 above −24 dBFS), gain to −18 LUFS (ebur128), capped at −1.5 dBTP, look-ahead
+   limiter at −1.5 dBFS (AMR-NB distorts on overload).
+5. Encode with `libopencore_amrnb` at 12.2 kbps.
+
+The result is −19.0 LUFS and −1.5 dBTP at the encoder input, and −20.0 LUFS and −2.8 dBTP after
+decoding. The gain is limited by the true-peak cap, so it stays about 1 LU under the target. The
+file averages 12.8 kbit/s on the wire, because each 12.2 kbps AMR frame is 32 bytes with its header.
+Needs numpy, scipy, soundfile, and an ffmpeg built with `libopencore_amrnb` (set `FFMPEG`, or use the
+`imageio-ffmpeg` package, whose static build has it). The file is not in the jar.
+
+## Comments in the MIDI
+
+`tools/comment_midi.py res/phantasm-8bit.mid` writes the comments as Text meta events at tick 0 of
+track 0 (track list, instruments, tempo, length). The script checks that all other events keep their
+ticks and bytes, so the playback is the same.
 
 ## Regenerating the film data
 
