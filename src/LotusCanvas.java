@@ -2,10 +2,15 @@ import java.io.IOException;
 
 import javax.microedition.lcdui.Canvas;
 import javax.microedition.lcdui.Graphics;
+import javax.microedition.lcdui.Image;
 
 /**
  * Full-screen canvas that plays the film on its own thread. Playback time advances only while
  * the canvas runs. A frame is decoded and redrawn only when the film moves to a new frame.
+ *
+ * Drawing: the frame's background picture first (drawImage), then the people triangles on top
+ * (fillTriangle). The thread and paint() share the film state; the thread waits for paint via
+ * serviceRepaints(), and both sides hold the film's lock.
  */
 final class LotusCanvas extends Canvas implements Runnable {
 
@@ -13,9 +18,7 @@ final class LotusCanvas extends Canvas implements Runnable {
     private static final long MAX_STEP = 200;  // ignore huge gaps (e.g. after a pause)
 
     private final LotusFilm film;
-    private final int width;
-    private final int height;
-    private final int[] frame;
+    private Image background;                  // picture of the frame on screen
 
     private volatile Thread thread;
     private long clock;                        // film time, advances only while running
@@ -23,9 +26,6 @@ final class LotusCanvas extends Canvas implements Runnable {
     LotusCanvas(LotusFilm film) {
         setFullScreenMode(true);
         this.film = film;
-        width = getWidth();
-        height = getHeight();
-        frame = new int[width * height];
     }
 
     synchronized void start() {
@@ -53,13 +53,20 @@ final class LotusCanvas extends Canvas implements Runnable {
             int wanted = film.frameAt(clock);
             if (wanted != shown) {
                 try {
-                    film.seek(wanted);
-                    film.render(frame, width, height);
+                    synchronized (film) {
+                        film.seek(wanted);
+                        background = Image.createImage(film.payload(),
+                                film.backgroundOffset(), film.backgroundLength());
+                    }
                     shown = wanted;
                     repaint();
                     serviceRepaints();
                 } catch (IOException e) {
                     // A broken read ends playback; the last frame stays on screen.
+                    thread = null;
+                    break;
+                } catch (RuntimeException e) {
+                    // A picture that fails to decode ends playback the same way.
                     thread = null;
                     break;
                 }
@@ -77,8 +84,33 @@ final class LotusCanvas extends Canvas implements Runnable {
     }
 
     protected void paint(Graphics g) {
+        int w = getWidth();
+        int h = getHeight();
         g.setColor(0x000000);
-        g.fillRect(0, 0, getWidth(), getHeight());
-        g.drawRGB(frame, 0, width, 0, 0, width, height, false);
+        g.fillRect(0, 0, w, h);
+        synchronized (film) {
+            if (background != null) g.drawImage(background, 0, 0, Graphics.TOP | Graphics.LEFT);
+            int sw = film.srcW;
+            int sh = film.srcH;
+            for (int k = 0; k < film.leafCount; k++) {
+                int x0 = (film.lx0[k] * w) / sw;
+                int y0 = (film.ly0[k] * h) / sh;
+                int x1 = (film.lx1[k] * w) / sw;
+                int y1 = (film.ly1[k] * h) / sh;
+                if (film.ldiag[k] == 0) {
+                    // TL-BR diagonal: upper-right and lower-left triangles.
+                    g.setColor(film.lcolA[k]);
+                    g.fillTriangle(x0, y0, x1, y0, x1, y1);
+                    g.setColor(film.lcolB[k]);
+                    g.fillTriangle(x0, y0, x1, y1, x0, y1);
+                } else {
+                    // TR-BL diagonal: upper-left and lower-right triangles.
+                    g.setColor(film.lcolA[k]);
+                    g.fillTriangle(x0, y0, x1, y0, x0, y1);
+                    g.setColor(film.lcolB[k]);
+                    g.fillTriangle(x1, y0, x1, y1, x0, y1);
+                }
+            }
+        }
     }
 }
