@@ -1,33 +1,39 @@
 #!/usr/bin/env python3
 """
-Turns a video into the triangle film used by the J2ME "Lotus" demo (res/lotus.bin).
+Turns a video into the adaptive triangle film used by the J2ME "Lotus" demo (res/lotus.bin).
 
-The screen is covered by a jittered triangle mesh (irregular facets, like the low-poly
-reference). The mesh is static and stored once in the file. For every sampled frame each
-triangle gets ONE colour: the mean colour of the video pixels under that triangle. On the
-device every triangle is drawn as a flat-coloured polygon, so the video plays as a facet film.
+Every frame is modelled with its own triangles. A quadtree is laid over the screen: a cell is
+split while it still holds detail (colour variance above --detail) or is larger than --max-cell,
+down to --min-cell. So flat areas get a few big triangles, while faces, edges and textures get
+many small ones. Each leaf cell is cut into two triangles along the diagonal that fits the
+frame best. Every triangle is one flat colour: the mean of the video pixels under it.
+
+The cells tile the screen exactly and share their borders, so the triangles have no cracks.
 
 Pipeline:
-  1. ffmpeg decodes the chosen time range at --fps, cropped (default) or stretched to
-     SCREEN_W x SCREEN_H so the film fills the whole screen.
-  2. Triangle ids are rasterised once into a label map of the screen.
-  3. Per frame, the colour of each triangle is the mean of its pixels (numpy bincount).
-  4. The colours are graded (exposure, gamma, a little saturation) and quantised to --colours.
-  5. Written as format "LOT3" (see below).
+  1. Pass 1: ffmpeg decodes the chosen time range (cropped to the screen aspect by default,
+     or stretched), and a global exposure is estimated from the luminance of all frames.
+  2. Pass 2: each frame is graded, the quadtree and the diagonals are chosen, and the triangle
+     colours are measured.
+  3. The colours are quantised to one palette (--colours) and written as format "LOT4".
 
-Format "LOT3" (big-endian):
-  4 bytes  magic "LOT3"
-  u8       version (3)
-  u8       bits per triangle colour (4 or 8)
-  u8       palette size
+Format "LOT4" (big-endian):
+  4 bytes  magic "LOT4"
+  u8       version (4)
   u8       fps
   u16      frame count
-  u16      vertex count
-  u16      triangle count
-  vertices vertex count * (u16 x, u16 y), normalised to 0..1024 (scaled to the screen on device)
-  tris     triangle count * (u16 a, u16 b, u16 c), indices into the vertex list
+  u16      source width, u16 source height (the coordinate space of the tree, 240 x 320)
+  u8       minimum cell size in source pixels
+  u16      max leaves in any frame (for buffer sizing)
+  u8       palette size
   palette  size * (R, G, B)
-  frames   frame count * packed(triangle count colours), one frame after another
+  frames   frame count * [ u16 payload length, payload ]
+  payload  u16 bit bytes, bit bytes, then 2 colour bytes (palette index) per leaf, leaf order
+
+Tree bits (preorder, MSB first): at a node, if the node can split (both sides >= 2*min-cell)
+read 1 bit: 1 = split into TL, TR, BL, BR (children split at the integer midpoint), 0 = leaf.
+A leaf reads 1 more bit: its diagonal, 0 = TL-BR, 1 = TR-BL. The leaf's two triangles take
+colour bytes 2k and 2k+1, where k is the leaf index.
 
 Only the derived binary is committed; decoded frames stay outside the repo.
 
@@ -35,11 +41,10 @@ Requirements: ffmpeg (or imageio-ffmpeg, which bundles one), numpy, Pillow.
 
 Usage:
   python3 tools/make_lotus_data.py --video "docs/Phantasm Mineshaft Chase scene.mp4" \
-      --out res/lotus.bin --fps 6 --cols 18 --rows 24 --colours 16 [--fit crop|stretch]
+      --out res/lotus.bin --fps 5 --detail 12 --min-cell 6 --max-cell 96 --colours 64
 """
 
 import argparse
-import random
 import shutil
 import struct
 import subprocess
@@ -48,11 +53,10 @@ import sys
 import numpy as np
 from PIL import Image, ImageDraw
 
-MAGIC = b"LOT3"
-VERSION = 3
-SCREEN_W = 240
-SCREEN_H = 320
-NORM = 1024
+MAGIC = b"LOT4"
+VERSION = 4
+SRC_W = 240
+SRC_H = 320
 
 
 def find_ffmpeg():
@@ -80,60 +84,14 @@ def probe_duration(ffmpeg, video):
     sys.exit("could not read video duration")
 
 
-def build_mesh(cols, rows, jitter, seed):
-    """Jittered triangle mesh over the screen. Returns (vertices, triangles).
-
-    vertices: list of (x, y) in screen pixels (floats). Border vertices stay on the border so
-    the mesh covers the screen exactly. Each cell is split along a random diagonal.
-    """
-    rng = random.Random(seed)
-    cw = SCREEN_W / float(cols)
-    ch = SCREEN_H / float(rows)
-    verts = []
-    for j in range(rows + 1):
-        for i in range(cols + 1):
-            x = i * cw
-            y = j * ch
-            if 0 < i < cols and 0 < j < rows:
-                x += rng.uniform(-jitter, jitter) * cw
-                y += rng.uniform(-jitter, jitter) * ch
-            verts.append((x, y))
-    tris = []
-    stride = cols + 1
-    for j in range(rows):
-        for i in range(cols):
-            a = j * stride + i
-            b = a + 1
-            c = a + stride
-            d = c + 1
-            if rng.random() < 0.5:
-                tris.append((a, b, d))
-                tris.append((a, d, c))
-            else:
-                tris.append((a, b, c))
-                tris.append((b, d, c))
-    return verts, tris
-
-
-def label_map(verts, tris):
-    """Screen-sized map: pixel -> triangle index + 1 (0 = outside, none expected)."""
-    img = Image.new("I", (SCREEN_W, SCREEN_H), 0)
-    draw = ImageDraw.Draw(img)
-    for n, (a, b, c) in enumerate(tris):
-        poly = [verts[a], verts[b], verts[c]]
-        draw.polygon(poly, fill=n + 1)
-    return np.array(img, dtype=np.int64)
-
-
-def stream_triangle_colours(ffmpeg, video, start, duration, fps, fit, labels, tri_count):
-    """Yields per-frame triangle colours (tri_count, 3) as float32, one frame at a time."""
+def frame_stream(ffmpeg, video, start, duration, fps, fit):
+    """Yields source frames as float32 arrays (SRC_H, SRC_W, 3) in 0..255, one at a time."""
     if fit == "crop":
-        # Keep the screen aspect: centre crop of the source, then scale to the screen.
         vf = ("crop=trunc(ih*%d/%d/2)*2:ih:trunc((iw-ih*%d/%d)/4)*2:0,"
-              "fps=%.6f,scale=%d:%d:flags=area") % (SCREEN_W, SCREEN_H, SCREEN_W, SCREEN_H,
-                                                    fps, SCREEN_W, SCREEN_H)
+              "fps=%.6f,scale=%d:%d:flags=area") % (SRC_W, SRC_H, SRC_W, SRC_H,
+                                                    fps, SRC_W, SRC_H)
     else:
-        vf = "fps=%.6f,scale=%d:%d:flags=area" % (fps, SCREEN_W, SCREEN_H)
+        vf = "fps=%.6f,scale=%d:%d:flags=area" % (fps, SRC_W, SRC_H)
     cmd = [ffmpeg, "-hide_banner", "-loglevel", "error"]
     if start > 0:
         cmd += ["-ss", "%.3f" % start]
@@ -142,98 +100,109 @@ def stream_triangle_colours(ffmpeg, video, start, duration, fps, fit, labels, tr
         cmd += ["-t", "%.3f" % duration]
     cmd += ["-vf", vf, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
 
-    frame_bytes = SCREEN_W * SCREEN_H * 3
+    frame_bytes = SRC_W * SRC_H * 3
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-    flat = labels.ravel()
-    counts = np.bincount(flat, minlength=tri_count + 1)[1:].astype(np.float64)
-    empty = counts == 0
     try:
         while True:
             raw = proc.stdout.read(frame_bytes)
             if len(raw) < frame_bytes:
                 break
-            img = np.frombuffer(raw, dtype=np.uint8).reshape(SCREEN_H, SCREEN_W, 3)
-            out = np.zeros((tri_count, 3), dtype=np.float32)
-            for ch in range(3):
-                sums = np.bincount(flat, weights=img[:, :, ch].ravel().astype(np.float64),
-                                   minlength=tri_count + 1)[1:]
-                out[:, ch] = sums / np.maximum(counts, 1.0)
-            yield out
+            yield np.frombuffer(raw, dtype=np.uint8).reshape(SRC_H, SRC_W, 3).astype(np.float32)
     finally:
         proc.stdout.close()
         proc.wait()
-    if empty.any():
-        print("warning: %d triangles covered no pixels" % int(empty.sum()))
 
 
-def grade(colours):
-    """Lifts dark footage: exposure from a robust peak, gamma and a little saturation."""
-    lum = colours.mean(axis=2)
-    peak = max(np.percentile(lum, 97.0), 1.0)
-    x = np.clip(colours / peak, 0.0, 1.0) ** 0.45
+def global_peak(ffmpeg, args, duration):
+    """97th percentile of luminance over all frames (subsampled), for a stable exposure."""
+    samples = []
+    for img in frame_stream(ffmpeg, args.video, args.start, duration, args.fps, args.fit):
+        lum = img.mean(axis=2)
+        samples.append(lum[::4, ::4].ravel())
+    if not samples:
+        sys.exit("no frames decoded; check --start/--duration")
+    return max(float(np.percentile(np.concatenate(samples), 97.0)), 1.0)
+
+
+def grade(img, peak):
+    """Lifts dark footage with a shared exposure, gamma and a little saturation."""
+    x = np.clip(img / peak, 0.0, 1.0) ** 0.45
     gray = x.mean(axis=2, keepdims=True)
     x = gray + (x - gray) * 1.35
-    return (np.clip(x, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
+    return np.clip(x, 0.0, 1.0) * 255.0
 
 
-def quantise(graded, colours):
-    n, tris, _ = graded.shape
-    tall = Image.fromarray(graded, "RGB")  # width = triangles, height = frames
-    pal_img = tall.quantize(colors=colours, method=Image.MEDIANCUT, dither=Image.NONE)
-    palette = pal_img.getpalette()[: colours * 3]
-    indices = np.array(pal_img, dtype=np.uint8).reshape(n, tris)
-    return palette, indices
+class FrameModel:
+    """Quadtree + diagonal choice for one frame. Produces the bit list and leaf colours."""
+
+    def __init__(self, img, detail, min_cell, max_cell):
+        self.img = img
+        self.detail = detail
+        self.min_cell = min_cell
+        self.max_cell = max_cell
+        self.bits = []          # tree bits in traversal order
+        self.leaves = []        # (x0, y0, x1, y1, diag, colour_a, colour_b) per leaf
+
+    def can_split(self, w, h):
+        return w >= 2 * self.min_cell and h >= 2 * self.min_cell
+
+    def run(self):
+        self.visit(0, 0, SRC_W, SRC_H)
+        return self.bits, self.leaves
+
+    def visit(self, x0, y0, x1, y1):
+        w = x1 - x0
+        h = y1 - y0
+        if self.can_split(w, h):
+            region = self.img[y0:y1, x0:x1]
+            spread = region.std(axis=(0, 1)).mean()
+            split = spread > self.detail or max(w, h) > self.max_cell
+            self.bits.append(1 if split else 0)
+            if split:
+                mx = x0 + w // 2
+                my = y0 + h // 2
+                self.visit(x0, y0, mx, my)
+                self.visit(mx, y0, x1, my)
+                self.visit(x0, my, mx, y1)
+                self.visit(mx, my, x1, y1)
+                return
+        self.leaf(x0, y0, x1, y1)
+
+    def leaf(self, x0, y0, x1, y1):
+        w = x1 - x0
+        h = y1 - y0
+        region = self.img[y0:y1, x0:x1]
+        # Normalised pixel-centre coordinates inside the leaf.
+        jj, ii = np.meshgrid(np.arange(w), np.arange(h))
+        u = (jj + 0.5) / w
+        v = (ii + 0.5) / h
+        masks0 = (u >= v, u < v)                  # diagonal TL-BR
+        masks1 = (u + v < 1.0, u + v >= 1.0)      # diagonal TR-BL
+        best = None
+        for diag, masks in ((0, masks0), (1, masks1)):
+            err = 0.0
+            cols = []
+            for m in masks:
+                px = region[m]
+                if px.size == 0:
+                    cols.append((0.0, 0.0, 0.0))
+                    continue
+                mean = px.mean(axis=0)
+                err += float(((px - mean) ** 2).sum())
+                cols.append(tuple(mean))
+            if best is None or err < best[0]:
+                best = (err, diag, cols)
+        _, diag, cols = best
+        self.bits.append(diag)
+        self.leaves.append((x0, y0, x1, y1, diag, cols[0], cols[1]))
 
 
-def pack(indices, bits):
-    """4-bit: two triangles per byte, high nibble first."""
-    if bits == 8:
-        return indices.astype(np.uint8)
-    frames, count = indices.shape
-    if count % 2:
-        indices = np.concatenate([indices, np.zeros((frames, 1), np.uint8)], axis=1)
-    pairs = indices.reshape(frames, -1, 2)
-    return ((pairs[:, :, 0] << 4) | pairs[:, :, 1]).astype(np.uint8)
-
-
-def write_blob(path, verts, tris, palette, indices, bits, fps):
-    frames = indices.shape[0]
-    packed = pack(indices, bits)
-    with open(path, "wb") as f:
-        f.write(MAGIC)
-        f.write(struct.pack(">BBBBHHH", VERSION, bits, len(palette) // 3, fps,
-                            frames, len(verts), len(tris)))
-        for x, y in verts:
-            nx = int(round(min(max(x / SCREEN_W, 0.0), 1.0) * NORM))
-            ny = int(round(min(max(y / SCREEN_H, 0.0), 1.0) * NORM))
-            f.write(struct.pack(">HH", nx, ny))
-        for a, b, c in tris:
-            f.write(struct.pack(">HHH", a, b, c))
-        f.write(bytes(palette))
-        f.write(packed.tobytes())
-    return packed.shape[1]
-
-
-def write_preview(path, verts, tris, palette, indices, count):
-    pal = np.array(palette, dtype=np.uint8).reshape(-1, 3)
-    n = indices.shape[0]
-    step = max(1, n // count)
-    picks = list(range(0, n, step))[:count]
-    cols_sheet = 6
-    scale = 1
-    tw, th = SCREEN_W // 2, SCREEN_H // 2
-    rows_sheet = (len(picks) + cols_sheet - 1) // cols_sheet
-    sheet = Image.new("RGB", (cols_sheet * (tw + 4), rows_sheet * (th + 4)), (30, 30, 30))
-    for i, f in enumerate(picks):
-        frame = Image.new("RGB", (SCREEN_W, SCREEN_H), (0, 0, 0))
-        draw = ImageDraw.Draw(frame)
-        for t, (a, b, c) in enumerate(tris):
-            colour = tuple(int(v) for v in pal[indices[f, t]])
-            draw.polygon([verts[a], verts[b], verts[c]], fill=colour)
-        frame = frame.resize((tw, th), Image.BILINEAR)
-        r, c = divmod(i, cols_sheet)
-        sheet.paste(frame, (c * (tw + 4), r * (th + 4)))
-    sheet.save(path)
+def pack_bits(bits):
+    out = bytearray((len(bits) + 7) // 8)
+    for i, b in enumerate(bits):
+        if b:
+            out[i >> 3] |= 0x80 >> (i & 7)
+    return bytes(out)
 
 
 def main():
@@ -244,57 +213,124 @@ def main():
     ap.add_argument("--start", type=float, default=0.0, help="start time in seconds")
     ap.add_argument("--duration", type=float, default=0.0,
                     help="length in seconds (0 = until the end of the video)")
-    ap.add_argument("--fps", type=int, default=6, help="playback frames per second (1..60)")
-    ap.add_argument("--cols", type=int, default=18, help="mesh cells across the screen")
-    ap.add_argument("--rows", type=int, default=24, help="mesh cells down the screen")
-    ap.add_argument("--jitter", type=float, default=0.32,
-                    help="vertex jitter as a fraction of a cell (0 = regular grid)")
-    ap.add_argument("--seed", type=int, default=7, help="mesh seed (changes facet shapes)")
-    ap.add_argument("--colours", type=int, default=16, help="palette size, 2..255")
+    ap.add_argument("--fps", type=int, default=5, help="playback frames per second (1..30)")
+    ap.add_argument("--detail", type=float, default=12.0,
+                    help="split a cell while its colour spread is above this (0..255)")
+    ap.add_argument("--min-cell", type=int, default=6, help="smallest leaf size in pixels (>=2)")
+    ap.add_argument("--max-cell", type=int, default=96, help="largest leaf size in pixels")
+    ap.add_argument("--colours", type=int, default=64, help="palette size, 2..255")
     ap.add_argument("--fit", choices=["crop", "stretch"], default="crop",
                     help="crop: keep aspect, fill the screen; stretch: squeeze the whole frame")
     ap.add_argument("--preview", help="optional PNG contact sheet of the result")
     args = ap.parse_args()
 
-    if not 1 <= args.fps <= 60:
-        sys.exit("--fps must be 1..60")
+    if not 1 <= args.fps <= 30:
+        sys.exit("--fps must be 1..30")
     if not 2 <= args.colours <= 255:
         sys.exit("--colours must be 2..255")
-    if not (1 <= args.cols <= 60 and 1 <= args.rows <= 60):
-        sys.exit("--cols/--rows must be 1..60")
-    if not 0.0 <= args.jitter <= 0.45:
-        sys.exit("--jitter must be 0..0.45 (larger values can fold triangles)")
-    bits = 4 if args.colours <= 16 else 8
-    colours = min(args.colours, 16) if bits == 4 else args.colours
+    if args.min_cell < 2 or args.min_cell > 60:
+        sys.exit("--min-cell must be 2..60")
+    if args.max_cell < args.min_cell:
+        sys.exit("--max-cell must be >= --min-cell")
 
     ffmpeg = find_ffmpeg()
     duration = args.duration if args.duration > 0 else probe_duration(ffmpeg, args.video) - args.start
     print("video: %s, %.2f s from %.2f s at %d fps, fit=%s" %
           (args.video, duration, args.start, args.fps, args.fit))
 
-    verts, tris = build_mesh(args.cols, args.rows, args.jitter, args.seed)
-    labels = label_map(verts, tris)
-    print("mesh: %d vertices, %d triangles" % (len(verts), len(tris)))
+    peak = global_peak(ffmpeg, args, duration)
+    print("exposure peak (97th percentile luminance): %.1f" % peak)
 
-    per_frame = list(stream_triangle_colours(ffmpeg, args.video, args.start, duration,
-                                             args.fps, args.fit, labels, len(tris)))
-    if not per_frame:
+    frames = []                  # per frame: (bits, leaves)
+    for img in frame_stream(ffmpeg, args.video, args.start, duration, args.fps, args.fit):
+        graded = grade(img, peak)
+        frames.append(FrameModel(graded, args.detail, args.min_cell, args.max_cell).run())
+    if not frames:
         sys.exit("no frames decoded; check --start/--duration")
-    if len(per_frame) > 65535:
+    if len(frames) > 65535:
         sys.exit("too many frames for the u16 counter; shorten --duration or lower --fps")
-    colour_array = np.stack(per_frame)  # (frames, triangles, 3)
-    print("sampled %d frames" % colour_array.shape[0])
 
-    graded = grade(colour_array)
-    palette, indices = quantise(graded, colours)
-    frame_bytes = write_blob(args.out, verts, tris, palette, indices, bits, args.fps)
-    total = 4 + 1 + 1 + 1 + 1 + 2 + 2 + 2 + 4 * len(verts) + 6 * len(tris) + len(palette) \
-        + indices.shape[0] * frame_bytes
-    print("wrote %s: %d frames, %d triangles, %d bytes per frame, %d colours (%d-bit), %d bytes" %
-          (args.out, indices.shape[0], len(tris), frame_bytes, len(palette) // 3, bits, total))
+    leaf_counts = [len(leaves) for _, leaves in frames]
+    max_leaves = max(leaf_counts)
+    if max_leaves * 2 > 65535 - 16:
+        sys.exit("a frame has too many leaves for the u16 payload length; raise --detail")
+    print("frames: %d, leaves per frame: avg %.0f, max %d (%d triangles max)" %
+          (len(frames), sum(leaf_counts) / float(len(frames)), max_leaves, 2 * max_leaves))
+
+    # One shared palette, quantised over every triangle colour in the film.
+    all_cols = []
+    for _, leaves in frames:
+        for leaf in leaves:
+            all_cols.append(leaf[5])
+            all_cols.append(leaf[6])
+    colour_arr = np.clip(np.array(all_cols, dtype=np.float64) + 0.5, 0, 255).astype(np.uint8)
+    tall = Image.fromarray(colour_arr.reshape(-1, 1, 3), "RGB")
+    pal_img = tall.quantize(colors=args.colours, method=Image.MEDIANCUT, dither=Image.NONE)
+    palette = pal_img.getpalette()[: args.colours * 3]
+    indices = np.array(pal_img, dtype=np.uint8).reshape(-1)
+
+    payloads = []
+    k = 0
+    for bits, leaves in frames:
+        colour_bytes = bytearray()
+        for _ in leaves:
+            colour_bytes.append(int(indices[k]))
+            colour_bytes.append(int(indices[k + 1]))
+            k += 2
+        bit_bytes = pack_bits(bits)
+        payload = struct.pack(">H", len(bit_bytes)) + bit_bytes + bytes(colour_bytes)
+        payloads.append(payload)
+
+    with open(args.out, "wb") as f:
+        f.write(MAGIC)
+        f.write(struct.pack(">BBHHHBHB", VERSION, args.fps, len(payloads),
+                            SRC_W, SRC_H, args.min_cell, max_leaves, len(palette) // 3))
+        f.write(bytes(palette))
+        for payload in payloads:
+            f.write(struct.pack(">H", len(payload)))
+            f.write(payload)
+
+    total = 4 + 12 + len(palette) + sum(2 + len(p) for p in payloads)
+    print("wrote %s: %d bytes (%d colours), avg %.0f bytes per frame" %
+          (args.out, total, len(palette) // 3, total / float(len(payloads))))
+
     if args.preview:
-        write_preview(args.preview, verts, tris, palette, indices, 6)
+        write_preview(args.preview, frames, palette, indices)
         print("preview: %s" % args.preview)
+
+
+def triangles_of(leaf):
+    x0, y0, x1, y1, diag = leaf[0], leaf[1], leaf[2], leaf[3], leaf[4]
+    if diag == 0:
+        return ((x0, y0), (x1, y0), (x1, y1)), ((x0, y0), (x1, y1), (x0, y1))
+    return ((x0, y0), (x1, y0), (x0, y1)), ((x1, y0), (x1, y1), (x0, y1))
+
+
+def write_preview(path, frames, palette, indices):
+    """Renders a few frames exactly as the device will (flat triangles on black)."""
+    pal = np.array(palette, dtype=np.uint8).reshape(-1, 3)
+    n = len(frames)
+    step = max(1, n // 6)
+    picks = list(range(0, n, step))[:6]
+    cell_w, cell_h = SRC_W // 2, SRC_H // 2
+    sheet = Image.new("RGB", (len(picks) * (cell_w + 4), cell_h), (30, 30, 30))
+    offsets = []
+    k = 0
+    for _, leaves in frames:
+        offsets.append(k)
+        k += 2 * len(leaves)
+    for i, f in enumerate(picks):
+        frame = Image.new("RGB", (SRC_W, SRC_H), (0, 0, 0))
+        draw = ImageDraw.Draw(frame)
+        base = offsets[f]
+        for j, leaf in enumerate(frames[f][1]):
+            ca = tuple(int(v) for v in pal[indices[base + 2 * j]])
+            cb = tuple(int(v) for v in pal[indices[base + 2 * j + 1]])
+            t1, t2 = triangles_of(leaf)
+            draw.polygon(t1, fill=ca)
+            draw.polygon(t2, fill=cb)
+        sheet.paste(frame.resize((cell_w, cell_h), Image.BILINEAR), (i * (cell_w + 4), 0))
+    sheet.save(path)
 
 
 if __name__ == "__main__":

@@ -3,44 +3,51 @@ import java.io.IOException;
 import java.io.InputStream;
 
 /**
- * Plays the video as a facet film: a jittered triangle mesh covers the whole screen, and every
- * triangle is drawn in one flat colour taken from the current video frame.
+ * Plays the video as a film modelled with triangles. Every frame has its own adaptive mesh:
+ * a quadtree over the screen, where each leaf is cut into two flat-coloured triangles along
+ * the diagonal that fits the picture. Detailed parts get small triangles, flat parts big ones.
  *
- * The data (res/lotus.bin, made by tools/make_lotus_data.py) is format "LOT3": a static mesh
- * (vertices and triangles, stored once) followed by the packed per-frame triangle colours. The
- * frames are read as a stream, so only one packed frame is held in memory. Playback is
- * sequential; a seek only rewinds when it goes backwards.
+ * The data (res/lotus.bin, made by tools/make_lotus_data.py) is format "LOT4". Each frame is a
+ * compact tree (bits) plus two colour bytes per leaf, read as a stream. The tree is decoded
+ * here and drawn straight away; the cells tile the screen with no gaps.
  */
 final class LotusFilm {
     static final String RESOURCE = "/lotus.bin";
-    private static final int NORM = 1024;
 
-    final int bits;
     final int fps;
     final int frames;
-    final int vertexCount;
-    final int triangleCount;
+    final int srcW;
+    final int srcH;
+    final int minCell;
+    final int maxLeaves;
     /** Palette entries as 0xRRGGBB. */
     final int[] palette;
 
     private final Class owner;
-    private final int colours;
     private final int headerBytes;
-    private final int[] vertX;        // normalised 0..1024
-    private final int[] vertY;
-    private final int[] triA;         // vertex indices, 3 per triangle
-    private final int[] triB;
-    private final int[] triC;
-    private final int frameBytes;
-    private final byte[] packed;
-    private final int[] triColour;    // ARGB colour per triangle of the current frame
-    private final int[] sx;           // screen-space vertices for the current size
-    private final int[] sy;
-    private int screenW = -1;
-    private int screenH = -1;
+    private final byte[] payload;
+    private final int payloadCapacity;
+
+    // Decoded leaves of the current frame, in traversal order.
+    private final int[] lx0;
+    private final int[] ly0;
+    private final int[] lx1;
+    private final int[] ly1;
+    private final int[] ldiag;
+    private final int[] lcolA;        // ARGB
+    private final int[] lcolB;
+    private int leafCount;
+
     private DataInputStream in;       // positioned at frame `pos`
     private int pos;                  // index of the next frame the stream yields
-    private int current = -1;         // frame held in triColour, -1 = none
+    private int current = -1;         // frame held in the leaf arrays, -1 = none
+
+    // Bit reader over the payload.
+    private int bitPos;
+    private int bitEnd;
+    private int colourBase;
+    private int colourIndex;
+
     private final int[] tx = new int[3];
     private final int[] ty = new int[3];
 
@@ -49,42 +56,23 @@ final class LotusFilm {
      */
     LotusFilm(Class owner) throws IOException {
         this.owner = owner;
-        InputStream first = open();
-        DataInputStream d = new DataInputStream(first);
+        DataInputStream d = new DataInputStream(open());
         byte[] magic = new byte[4];
         d.readFully(magic);
-        if (magic[0] != 'L' || magic[1] != 'O' || magic[2] != 'T' || magic[3] != '3') {
+        if (magic[0] != 'L' || magic[1] != 'O' || magic[2] != 'T' || magic[3] != '4') {
             throw new IOException("lotus.bin: bad magic");
         }
         int version = d.readUnsignedByte();
-        if (version != 3) throw new IOException("lotus.bin: unsupported version " + version);
-        bits = d.readUnsignedByte();
-        if (bits != 4 && bits != 8) throw new IOException("lotus.bin: bad bit depth " + bits);
-        colours = d.readUnsignedByte();
+        if (version != 4) throw new IOException("lotus.bin: unsupported version " + version);
         fps = d.readUnsignedByte();
         frames = d.readUnsignedShort();
-        vertexCount = d.readUnsignedShort();
-        triangleCount = d.readUnsignedShort();
-        if (fps == 0 || frames == 0 || triangleCount == 0 || vertexCount < 3) {
+        srcW = d.readUnsignedShort();
+        srcH = d.readUnsignedShort();
+        minCell = d.readUnsignedByte();
+        maxLeaves = d.readUnsignedShort();
+        int colours = d.readUnsignedByte();
+        if (fps == 0 || frames == 0 || maxLeaves == 0 || srcW == 0 || srcH == 0 || minCell < 2) {
             throw new IOException("lotus.bin: empty film");
-        }
-
-        vertX = new int[vertexCount];
-        vertY = new int[vertexCount];
-        for (int i = 0; i < vertexCount; i++) {
-            vertX[i] = d.readUnsignedShort();
-            vertY[i] = d.readUnsignedShort();
-        }
-        triA = new int[triangleCount];
-        triB = new int[triangleCount];
-        triC = new int[triangleCount];
-        for (int t = 0; t < triangleCount; t++) {
-            triA[t] = d.readUnsignedShort();
-            triB[t] = d.readUnsignedShort();
-            triC[t] = d.readUnsignedShort();
-            if (triA[t] >= vertexCount || triB[t] >= vertexCount || triC[t] >= vertexCount) {
-                throw new IOException("lotus.bin: triangle index out of range");
-            }
         }
 
         palette = new int[colours];
@@ -94,15 +82,21 @@ final class LotusFilm {
             int b = d.readUnsignedByte();
             palette[i] = (r << 16) | (g << 8) | b;
         }
+        headerBytes = 4 + 12 + 3 * colours;
 
-        // Bytes before the first frame: fixed header + vertices + triangles + palette.
-        headerBytes = 4 + 1 + 1 + 1 + 1 + 2 + 2 + 2
-                + 4 * vertexCount + 6 * triangleCount + 3 * colours;
-        frameBytes = bits == 4 ? (triangleCount + 1) / 2 : triangleCount;
-        packed = new byte[frameBytes];
-        triColour = new int[triangleCount];
-        sx = new int[vertexCount];
-        sy = new int[vertexCount];
+        // Largest possible payload: 2 bytes of bit count, the tree bits (at most 2 per leaf),
+        // and 2 colour bytes per leaf.
+        payloadCapacity = 2 + (2 * maxLeaves + 7) / 8 + 1 + 2 * maxLeaves;
+        payload = new byte[payloadCapacity];
+
+        lx0 = new int[maxLeaves];
+        ly0 = new int[maxLeaves];
+        lx1 = new int[maxLeaves];
+        ly1 = new int[maxLeaves];
+        ldiag = new int[maxLeaves];
+        lcolA = new int[maxLeaves];
+        lcolB = new int[maxLeaves];
+
         in = d;
         pos = 0;
     }
@@ -113,25 +107,44 @@ final class LotusFilm {
         return s;
     }
 
-    /** Makes frame `index` the current one, decoding its triangle colours. */
+    /** Makes frame `index` the current one: reads its payload and decodes the tree. */
     void seek(int index) throws IOException {
         if (index == current) return;
         if (index < 0 || index >= frames) throw new IOException("frame " + index + " out of range");
         if (index < pos) {
-            // Rewind: reopen the resource and skip everything before the first frame.
+            // Rewind: reopen the resource and skip the header again.
             in.close();
             in = new DataInputStream(open());
             in.readFully(new byte[headerBytes]);
             pos = 0;
         }
         while (pos < index) {
-            in.readFully(packed);
+            skipFrame();
             pos++;
         }
-        in.readFully(packed);
+        readFrame();
         pos++;
-        decode();
+        decodeFrame();
         current = index;
+    }
+
+    private void skipFrame() throws IOException {
+        int len = in.readUnsignedShort();
+        if (len > payloadCapacity) throw new IOException("lotus.bin: frame too large");
+        in.readFully(payload, 0, len);
+    }
+
+    private void readFrame() throws IOException {
+        int len = in.readUnsignedShort();
+        if (len > payloadCapacity) throw new IOException("lotus.bin: frame too large");
+        in.readFully(payload, 0, len);
+        int bitBytes = ((payload[0] & 0xff) << 8) | (payload[1] & 0xff);
+        if (2 + bitBytes > len) throw new IOException("lotus.bin: bad frame");
+        bitPos = 16;
+        bitEnd = 16 + bitBytes * 8;
+        colourBase = 2 + bitBytes;
+        colourIndex = 0;
+        leafCount = 0;
     }
 
     /** Frame index for a playback clock in milliseconds (loops forever). */
@@ -139,45 +152,80 @@ final class LotusFilm {
         return (int) ((ms * fps / 1000L) % frames);
     }
 
-    private void decode() {
-        for (int t = 0; t < triangleCount; t++) {
-            int idx;
-            if (bits == 8) {
-                idx = packed[t] & 0xff;
-            } else {
-                int b = packed[t >> 1] & 0xff;
-                idx = (t & 1) == 0 ? (b >> 4) : (b & 15);
+    private int readBit() throws IOException {
+        if (bitPos >= bitEnd) throw new IOException("lotus.bin: tree overrun");
+        int b = (payload[bitPos >> 3] >> (7 - (bitPos & 7))) & 1;
+        bitPos++;
+        return b;
+    }
+
+    private void decodeFrame() throws IOException {
+        visit(0, 0, srcW, srcH);
+    }
+
+    /** Same traversal as the tool: children TL, TR, BL, BR at the integer midpoint. */
+    private void visit(int x0, int y0, int x1, int y1) throws IOException {
+        int w = x1 - x0;
+        int h = y1 - y0;
+        if (w >= 2 * minCell && h >= 2 * minCell) {
+            if (readBit() == 1) {
+                int mx = x0 + w / 2;
+                int my = y0 + h / 2;
+                visit(x0, y0, mx, my);
+                visit(mx, y0, x1, my);
+                visit(x0, my, mx, y1);
+                visit(mx, my, x1, y1);
+                return;
             }
-            if (idx >= colours) idx = colours - 1;
-            triColour[t] = 0xff000000 | palette[idx];
         }
+        if (leafCount >= maxLeaves) throw new IOException("lotus.bin: too many leaves");
+        int k = leafCount++;
+        lx0[k] = x0;
+        ly0[k] = y0;
+        lx1[k] = x1;
+        ly1[k] = y1;
+        ldiag[k] = readBit();
+        int ia = payload[colourBase + 2 * k] & 0xff;
+        int ib = payload[colourBase + 2 * k + 1] & 0xff;
+        if (ia >= palette.length) ia = palette.length - 1;
+        if (ib >= palette.length) ib = palette.length - 1;
+        lcolA[k] = 0xff000000 | palette[ia];
+        lcolB[k] = 0xff000000 | palette[ib];
     }
 
     /**
-     * Draws the current frame into fb (ARGB, w*h). The mesh covers the whole screen, so the
-     * film fills it edge to edge.
+     * Draws the current frame into fb (ARGB, w*h). The leaves tile the whole source area, so the
+     * film fills the screen edge to edge.
      */
     void render(int[] fb, int w, int h) {
-        if (w != screenW || h != screenH) {
-            screenW = w;
-            screenH = h;
-            for (int v = 0; v < vertexCount; v++) {
-                sx[v] = (vertX[v] * w) / NORM;
-                sy[v] = (vertY[v] * h) / NORM;
-            }
-        }
         int size = w * h;
         for (int i = 0; i < size; i++) fb[i] = 0xff000000;
 
-        for (int t = 0; t < triangleCount; t++) {
-            int a = triA[t];
-            int b = triB[t];
-            int c = triC[t];
-            tx[0] = sx[a]; ty[0] = sy[a];
-            tx[1] = sx[b]; ty[1] = sy[b];
-            tx[2] = sx[c]; ty[2] = sy[c];
-            fillTriangle(fb, w, h, triColour[t]);
+        for (int k = 0; k < leafCount; k++) {
+            int x0 = (lx0[k] * w) / srcW;
+            int y0 = (ly0[k] * h) / srcH;
+            int x1 = (lx1[k] * w) / srcW;
+            int y1 = (ly1[k] * h) / srcH;
+            if (ldiag[k] == 0) {
+                // TL-BR diagonal: upper-right and lower-left triangles.
+                setTri(x0, y0, x1, y0, x1, y1);
+                fillTriangle(fb, w, h, lcolA[k]);
+                setTri(x0, y0, x1, y1, x0, y1);
+                fillTriangle(fb, w, h, lcolB[k]);
+            } else {
+                // TR-BL diagonal: upper-left and lower-right triangles.
+                setTri(x0, y0, x1, y0, x0, y1);
+                fillTriangle(fb, w, h, lcolA[k]);
+                setTri(x1, y0, x1, y1, x0, y1);
+                fillTriangle(fb, w, h, lcolB[k]);
+            }
         }
+    }
+
+    private void setTri(int ax, int ay, int bx, int by, int cx, int cy) {
+        tx[0] = ax; ty[0] = ay;
+        tx[1] = bx; ty[1] = by;
+        tx[2] = cx; ty[2] = cy;
     }
 
     /**

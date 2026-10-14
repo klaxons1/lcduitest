@@ -34,7 +34,7 @@ cat > "$OUT/lcduitest.jad" <<JAD
 MicroEdition-Configuration: CLDC-1.1
 MicroEdition-Profile: MIDP-2.0
 MIDlet-Vendor: Anonymous developer
-MIDlet-Version: 0.0.4
+MIDlet-Version: 0.0.5
 MIDlet-Name: Lotus
 MIDlet-1: Lotus,,LotusDemo
 MIDlet-Jar-URL: lcduitest.jar
