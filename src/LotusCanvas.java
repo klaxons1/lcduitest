@@ -2,15 +2,14 @@ import java.io.IOException;
 
 import javax.microedition.lcdui.Canvas;
 import javax.microedition.lcdui.Graphics;
-import javax.microedition.lcdui.Image;
 
 /**
  * Full-screen canvas that plays the film on its own thread. Playback time advances only while
  * the canvas runs. A frame is decoded and redrawn only when the film moves to a new frame.
  *
- * Drawing: the frame's background picture first (drawImage), then the people triangles on top
- * (fillTriangle). The thread and paint() share the film state; the thread waits for paint via
- * serviceRepaints(), and both sides hold the film's lock.
+ * Drawing: the environment grid first (two flat triangles per cell), then the people triangles
+ * on top. All with Graphics.fillTriangle. The thread and paint() share the film state; the
+ * thread waits for paint via serviceRepaints(), and both sides hold the film's lock.
  */
 final class LotusCanvas extends Canvas implements Runnable {
 
@@ -18,7 +17,6 @@ final class LotusCanvas extends Canvas implements Runnable {
     private static final long MAX_STEP = 200;  // ignore huge gaps (e.g. after a pause)
 
     private final LotusFilm film;
-    private Image background;                  // picture of the frame on screen
 
     private volatile Thread thread;
     private long clock;                        // film time, advances only while running
@@ -55,18 +53,12 @@ final class LotusCanvas extends Canvas implements Runnable {
                 try {
                     synchronized (film) {
                         film.seek(wanted);
-                        background = Image.createImage(film.payload(),
-                                film.backgroundOffset(), film.backgroundLength());
                     }
                     shown = wanted;
                     repaint();
                     serviceRepaints();
                 } catch (IOException e) {
                     // A broken read ends playback; the last frame stays on screen.
-                    thread = null;
-                    break;
-                } catch (RuntimeException e) {
-                    // A picture that fails to decode ends playback the same way.
                     thread = null;
                     break;
                 }
@@ -89,7 +81,23 @@ final class LotusCanvas extends Canvas implements Runnable {
         g.setColor(0x000000);
         g.fillRect(0, 0, w, h);
         synchronized (film) {
-            if (background != null) g.drawImage(background, 0, 0, Graphics.TOP | Graphics.LEFT);
+            int cols = film.cols;
+            int rows = film.rows;
+            for (int cy = 0; cy < rows; cy++) {
+                int y0 = (cy * h) / rows;
+                int y1 = ((cy + 1) * h) / rows;
+                for (int cx = 0; cx < cols; cx++) {
+                    int x0 = (cx * w) / cols;
+                    int x1 = ((cx + 1) * w) / cols;
+                    int cell = cy * cols + cx;
+                    // Upper-right triangle (TL, TR, BR) and lower-left triangle (TL, BR, BL).
+                    g.setColor(film.envColour(cell, 0));
+                    g.fillTriangle(x0, y0, x1, y0, x1, y1);
+                    g.setColor(film.envColour(cell, 1));
+                    g.fillTriangle(x0, y0, x1, y1, x0, y1);
+                }
+            }
+
             int sw = film.srcW;
             int sh = film.srcH;
             for (int k = 0; k < film.leafCount; k++) {

@@ -1,43 +1,49 @@
 #!/usr/bin/env python3
 """
-Turns a video into the film used by the J2ME "Lotus" demo (res/lotus.bin, format LOT6).
+Turns a video into the triangle film used by the J2ME "Lotus" demo (res/lotus.bin, format LOT7).
 
-Each frame has two layers:
+Each frame has two layers, both made of flat-coloured triangles:
 
-  * Background: the whole frame as a picture (a PNG, 240x320, palette of --bg-colours). It is
-    not split into polygons. It changes every frame, so the backdrop plays as video.
-  * People: polygons. An adaptive quadtree restricted to the people regions, which are marked by
-    hand in tools/lotus/people_keyframes.json (ellipses on keyframes every 3 seconds). Between
-    keyframes the ellipses are interpolated (or the nearest keyframe is held when the number of
-    people changes). Each leaf is cut into two flat-coloured triangles along the diagonal that
-    fits the picture best. Cells split while they straddle the people outline, while they hold
-    detail, or while they are larger than --max-cell, down to --min-cell.
+  * Environment: a uniform grid of small cells (--env-cols x --env-rows over the 240x320 screen).
+    Every cell is cut into two triangles along its TL-BR diagonal, and each triangle is one
+    colour: the mean of the video pixels under it (people pixels excluded when possible). The
+    colours come from a shared palette of 16 entries (4 bits per triangle, as in the quad film).
+  * People: an adaptive quadtree restricted to the people regions, which are marked by hand in
+    tools/lotus/people_keyframes.json (ellipses on keyframes every 3 seconds). Between keyframes
+    the ellipses are interpolated (or the nearest keyframe is held when the number of people
+    changes). Each leaf is cut into two flat-coloured triangles along the diagonal that fits the
+    picture best. Cells split while they straddle the people outline, while they hold detail, or
+    while they are larger than --max-cell, down to --min-cell. The people colours use their own
+    palette of --colours entries.
 
-The people polygons are drawn over the background picture. Every cell that touches a people
-region is emitted, so the polygons cover the regions completely.
+The people triangles are drawn over the environment. Every cell that touches a people region is
+emitted, so the people triangles cover the regions completely.
 
 Pipeline:
   1. Pass 1: ffmpeg decodes the chosen range (cropped to the screen aspect by default, or
      stretched); a global exposure is estimated from the luminance of all frames.
-  2. Pass 2: each frame is graded; people ellipses are evaluated for its time; the background
-     picture and the people tree are computed.
-  3. The people colours are quantised to one palette (--colours) and everything is written as
-     format "LOT6".
+  2. Pass 2: each frame is graded; people ellipses are evaluated for its time; the environment
+     colours and the people tree are computed.
+  3. Colours are quantised to the two palettes and everything is written as format "LOT7".
 
-Format "LOT6" (big-endian):
-  4 bytes  magic "LOT6"
-  u8       version (6)
+Format "LOT7" (big-endian):
+  4 bytes  magic "LOT7"
+  u8       version (7)
   u8       fps
   u16      frame count
   u16      source width, u16 source height (the coordinate space, 240 x 320)
   u8       minimum leaf size in source pixels
   u16      max people leaves in any frame (buffer sizing)
-  u8       palette size
+  u8       environment grid columns, u8 environment grid rows
+  u8       environment palette size (<= 16)
+  u8       people palette size
   u16      largest frame payload in bytes (buffer sizing)
-  palette  size * (R, G, B)
+  env palette     size * (R, G, B)
+  people palette  size * (R, G, B)
   frames   frame count * [ u16 payload length, payload ]
-  payload  u16 background PNG length, background PNG bytes (a complete PNG file),
-           u16 tree bit bytes, tree bits, then two colour bytes per people leaf (leaf order)
+  payload  u16 tree bit bytes, tree bits, then one byte per environment cell (high nibble =
+           colour of the cell's upper-right triangle, low nibble = lower-left triangle), then two
+           people colour bytes per people leaf (leaf order)
 
 Tree bits (preorder, MSB first). A node reads 1 "present" bit: 0 = no people in this node (no
 leaf emitted), 1 = present. If present and the node can split (both sides >= 2*min-cell), it
@@ -55,7 +61,6 @@ Usage:
 """
 
 import argparse
-import io
 import json
 import math
 import shutil
@@ -66,8 +71,8 @@ import sys
 import numpy as np
 from PIL import Image, ImageDraw
 
-MAGIC = b"LOT6"
-VERSION = 6
+MAGIC = b"LOT7"
+VERSION = 7
 SRC_W = 240
 SRC_H = 320
 KEY_STEP = 3.0  # seconds between people keyframes
@@ -280,6 +285,36 @@ class FrameModel:
         self.leaves.append((x0, y0, x1, y1, diag, cols[0], cols[1]))
 
 
+def environment_colours(img, people_px, cols, rows):
+    """Mean colour of each environment triangle, shape (rows*cols*2, 3). Triangle 0 of a cell is
+    the upper-right half (TL-BR diagonal), triangle 1 the lower-left half. Pixels under people
+    are left out when the triangle has enough other pixels."""
+    cw = SRC_W / float(cols)
+    ch = SRC_H / float(rows)
+    xs = np.arange(SRC_W) + 0.5
+    ys = np.arange(SRC_H) + 0.5
+    cx = np.minimum((xs / cw).astype(np.int64), cols - 1)
+    cy = np.minimum((ys / ch).astype(np.int64), rows - 1)
+    u = (xs[None, :] - cx[None, :] * cw) / cw
+    v = (ys[:, None] - cy[:, None] * ch) / ch
+    tri = (u < v).astype(np.int64)  # 1 = lower-left triangle
+    index = ((cy[:, None] * cols + cx[None, :]) * 2 + tri).ravel()
+    n = rows * cols * 2
+
+    flat = img.reshape(-1, 3)
+    outside = (~people_px).ravel()
+    cnt_all = np.bincount(index, minlength=n).astype(np.float64)
+    cnt_out = np.bincount(index[outside], minlength=n).astype(np.float64)
+    out = np.zeros((n, 3), dtype=np.float64)
+    use_out = cnt_out >= 4
+    for ch_i in range(3):
+        sum_all = np.bincount(index, weights=flat[:, ch_i], minlength=n)
+        sum_out = np.bincount(index[outside], weights=flat[outside, ch_i], minlength=n)
+        out[:, ch_i] = np.where(use_out, sum_out / np.maximum(cnt_out, 1.0),
+                                sum_all / np.maximum(cnt_all, 1.0))
+    return out
+
+
 def pack_bits(bits):
     out = bytearray((len(bits) + 7) // 8)
     for i, b in enumerate(bits):
@@ -295,19 +330,14 @@ def triangles_of(leaf):
     return ((x0, y0), (x1, y0), (x0, y1)), ((x1, y0), (x1, y1), (x0, y1))
 
 
-def background_png(graded, mask, colours):
-    """The frame as a palette PNG. Pixels under the people regions are set to the mean of the
-    rest of the frame: the polygons cover them anyway, and flat areas compress much better."""
-    bg = graded.copy()
-    if mask.any():
-        rest = ~mask
-        if rest.any():
-            bg[mask] = graded[rest].mean(axis=0)
-    img = Image.fromarray(np.clip(bg + 0.5, 0, 255).astype(np.uint8))
-    pal = img.quantize(colors=colours, method=Image.MEDIANCUT, dither=Image.NONE)
-    buf = io.BytesIO()
-    pal.save(buf, "PNG", optimize=True)
-    return buf.getvalue()
+def quantise(colours, count):
+    """Palette and indices for an (N, 3) float array of colours."""
+    arr = np.clip(np.asarray(colours, dtype=np.float64) + 0.5, 0, 255).astype(np.uint8)
+    tall = Image.fromarray(arr.reshape(-1, 1, 3), "RGB")
+    pal_img = tall.quantize(colors=count, method=Image.MEDIANCUT, dither=Image.NONE)
+    palette = pal_img.getpalette()[: count * 3]
+    indices = np.array(pal_img, dtype=np.uint8).reshape(-1)
+    return palette, indices
 
 
 def main():
@@ -321,12 +351,14 @@ def main():
     ap.add_argument("--duration", type=float, default=0.0,
                     help="length in seconds (0 = until the end of the video)")
     ap.add_argument("--fps", type=int, default=5, help="playback frames per second (1..30)")
+    ap.add_argument("--env-cols", type=int, default=30, help="environment grid columns (1..120)")
+    ap.add_argument("--env-rows", type=int, default=40, help="environment grid rows (1..160)")
+    ap.add_argument("--env-colours", type=int, default=16, help="environment palette, 2..16")
     ap.add_argument("--detail", type=float, default=20.0,
                     help="split a people cell while its colour spread is above this")
     ap.add_argument("--min-cell", type=int, default=8, help="smallest people leaf in pixels (>=2)")
     ap.add_argument("--max-cell", type=int, default=96, help="largest people leaf in pixels")
     ap.add_argument("--colours", type=int, default=64, help="people palette size, 2..255")
-    ap.add_argument("--bg-colours", type=int, default=64, help="background PNG palette, 2..256")
     ap.add_argument("--fit", choices=["crop", "stretch"], default="crop")
     ap.add_argument("--preview", help="optional PNG contact sheet of the result")
     args = ap.parse_args()
@@ -335,8 +367,10 @@ def main():
         sys.exit("--fps must be 1..30")
     if not 2 <= args.colours <= 255:
         sys.exit("--colours must be 2..255")
-    if not 2 <= args.bg_colours <= 256:
-        sys.exit("--bg-colours must be 2..256")
+    if not 2 <= args.env_colours <= 16:
+        sys.exit("--env-colours must be 2..16")
+    if not (1 <= args.env_cols <= 120 and 1 <= args.env_rows <= 160):
+        sys.exit("--env-cols must be 1..120 and --env-rows 1..160")
     if args.min_cell < 2 or args.min_cell > 60:
         sys.exit("--min-cell must be 2..60")
     if args.max_cell < args.min_cell:
@@ -351,7 +385,11 @@ def main():
     peak = global_peak(ffmpeg, args, duration)
     print("exposure peak (97th percentile luminance): %.1f" % peak)
 
-    frames = []  # per frame: (png, bits, leaves)
+    cols, rows = args.env_cols, args.env_rows
+    tri_count = cols * rows * 2
+    print("environment: %d x %d cells, %d triangles per frame" % (cols, rows, tri_count))
+
+    frames = []  # per frame: (env colours (tri_count, 3), bits, leaves)
     people_seen = 0
     for index, img in enumerate(frame_stream(ffmpeg, args.video, args.start, duration,
                                              args.fps, args.fit)):
@@ -361,9 +399,9 @@ def main():
             people_seen += 1
         graded = grade(img, peak)
         mask = people_mask(ells)
-        png = background_png(graded, mask, args.bg_colours)
+        env = environment_colours(graded, mask, cols, rows)
         bits, leaves = FrameModel(graded, ells, args.detail, args.min_cell, args.max_cell).run()
-        frames.append((png, bits, leaves))
+        frames.append((env, bits, leaves))
     if not frames:
         sys.exit("no frames decoded; check --start/--duration")
     if len(frames) > 65535:
@@ -371,89 +409,114 @@ def main():
 
     leaf_counts = [len(leaves) for _, _, leaves in frames]
     max_leaves = max(leaf_counts)
-    png_sizes = [len(p) for p, _, _ in frames]
     print("frames: %d (%d with people), people leaves per frame: avg %.0f, max %d" %
           (len(frames), people_seen, sum(leaf_counts) / float(len(frames)), max_leaves))
-    print("background PNG: avg %.0f bytes, max %d bytes" %
-          (sum(png_sizes) / float(len(png_sizes)), max(png_sizes)))
 
-    # Palette over the people leaf colours only.
-    all_cols = []
+    # Environment palette over every environment triangle of the film.
+    env_all = np.concatenate([env for env, _, _ in frames], axis=0)
+    env_palette, env_indices = quantise(env_all, args.env_colours)
+
+    # People palette over the people leaf colours only.
+    people_cols = []
     for _, _, leaves in frames:
         for leaf in leaves:
-            all_cols.append(leaf[5])
-            all_cols.append(leaf[6])
-    if all_cols:
-        colour_arr = np.clip(np.array(all_cols, dtype=np.float64) + 0.5, 0, 255).astype(np.uint8)
-        tall = Image.fromarray(colour_arr.reshape(-1, 1, 3), "RGB")
-        pal_img = tall.quantize(colors=args.colours, method=Image.MEDIANCUT, dither=Image.NONE)
-        palette = pal_img.getpalette()[: args.colours * 3]
-        indices = np.array(pal_img, dtype=np.uint8).reshape(-1)
+            people_cols.append(leaf[5])
+            people_cols.append(leaf[6])
+    if people_cols:
+        people_palette, people_indices = quantise(np.array(people_cols), args.colours)
     else:
-        palette = [0, 0, 0]
-        indices = np.zeros(0, dtype=np.uint8)
+        people_palette, people_indices = [0, 0, 0], np.zeros(0, dtype=np.uint8)
 
     payloads = []
-    k = 0
-    for png, bits, leaves in frames:
+    ei = 0
+    pi = 0
+    for _, bits, leaves in frames:
+        env_bytes = bytearray()
+        for c in range(tri_count // 2):
+            hi = int(env_indices[ei])
+            lo = int(env_indices[ei + 1])
+            env_bytes.append((hi << 4) | lo)
+            ei += 2
         colour_bytes = bytearray()
         for _ in leaves:
-            colour_bytes.append(int(indices[k]))
-            colour_bytes.append(int(indices[k + 1]))
-            k += 2
+            colour_bytes.append(int(people_indices[pi]))
+            colour_bytes.append(int(people_indices[pi + 1]))
+            pi += 2
         bit_bytes = pack_bits(bits)
-        if len(png) > 65535 or len(bit_bytes) > 65535:
-            sys.exit("a frame part is too large for its u16 length")
-        payloads.append(struct.pack(">H", len(png)) + png
-                        + struct.pack(">H", len(bit_bytes)) + bit_bytes + bytes(colour_bytes))
+        if len(bit_bytes) > 65535:
+            sys.exit("a frame's tree is too large for its u16 length")
+        payloads.append(struct.pack(">H", len(bit_bytes)) + bit_bytes
+                        + bytes(env_bytes) + bytes(colour_bytes))
     max_payload = max(len(p) for p in payloads)
     if max_payload > 65535:
         sys.exit("a frame payload is too large for the u16 length")
 
+    env_count = len(env_palette) // 3
+    people_count = len(people_palette) // 3
     with open(args.out, "wb") as f:
         f.write(MAGIC)
-        f.write(struct.pack(">BBHHHBHBH", VERSION, args.fps, len(payloads),
-                            SRC_W, SRC_H, args.min_cell, max_leaves, len(palette) // 3,
-                            max_payload))
-        f.write(bytes(palette))
+        f.write(struct.pack(">BBHHHBHBBBBH", VERSION, args.fps, len(payloads),
+                            SRC_W, SRC_H, args.min_cell, max_leaves, cols, rows,
+                            env_count, people_count, max_payload))
+        f.write(bytes(env_palette[: env_count * 3]))
+        f.write(bytes(people_palette[: people_count * 3]))
         for payload in payloads:
             f.write(struct.pack(">H", len(payload)))
             f.write(payload)
 
-    total = 4 + 14 + len(palette) + sum(2 + len(p) for p in payloads)
-    print("wrote %s: %d bytes (%d people colours), avg %.0f bytes per frame" %
-          (args.out, total, len(palette) // 3, total / float(len(payloads))))
+    header = 4 + 17 + env_count * 3 + people_count * 3
+    total = header + sum(2 + len(p) for p in payloads)
+    print("wrote %s: %d bytes (env palette %d, people palette %d), avg %.0f bytes per frame" %
+          (args.out, total, len(env_palette) // 3, len(people_palette) // 3,
+           total / float(len(payloads))))
 
     if args.preview:
-        write_preview(args.preview, frames, palette, indices)
+        write_preview(args.preview, frames, env_palette, env_indices,
+                      people_palette, people_indices, cols, rows)
         print("preview: %s" % args.preview)
 
 
-def write_preview(path, frames, palette, indices):
-    """Renders a few frames the way the device draws them (background picture, then people)."""
-    pal = np.array(palette, dtype=np.uint8).reshape(-1, 3) if len(palette) else None
+def write_preview(path, frames, env_palette, env_indices, people_palette, people_indices,
+                  cols, rows):
+    """Renders a few frames the way the device draws them (environment, then people)."""
+    env_pal = np.array(env_palette, dtype=np.uint8).reshape(-1, 3)
+    people_pal = np.array(people_palette, dtype=np.uint8).reshape(-1, 3)
     n = len(frames)
     step = max(1, n // 6)
     picks = list(range(0, n, step))[:6]
-    offsets = []
-    k = 0
+    tri_count = cols * rows * 2
+    env_off = []
+    people_off = []
+    e = 0
+    p = 0
     for _, _, leaves in frames:
-        offsets.append(k)
-        k += 2 * len(leaves)
-    cell_w, cell_h = SRC_W, SRC_H
-    sheet = Image.new("RGB", (len(picks) * (cell_w + 4), cell_h), (30, 30, 30))
+        env_off.append(e)
+        people_off.append(p)
+        e += tri_count
+        p += 2 * len(leaves)
+
+    cw = SRC_W / float(cols)
+    ch = SRC_H / float(rows)
+    sheet = Image.new("RGB", (len(picks) * (SRC_W + 4), SRC_H), (30, 30, 30))
     for i, f in enumerate(picks):
-        png, _, leaves = frames[f]
-        base = offsets[f]
-        frame = Image.open(io.BytesIO(png)).convert("RGB")
+        _, _, leaves = frames[f]
+        frame = Image.new("RGB", (SRC_W, SRC_H), (0, 0, 0))
         draw = ImageDraw.Draw(frame)
+        for c in range(tri_count // 2):
+            cy, cx = divmod(c, cols)
+            x0, y0 = cx * cw, cy * ch
+            x1, y1 = x0 + cw, y0 + ch
+            a = tuple(int(v) for v in env_pal[env_indices[env_off[f] + 2 * c]])
+            b = tuple(int(v) for v in env_pal[env_indices[env_off[f] + 2 * c + 1]])
+            draw.polygon([(x0, y0), (x1, y0), (x1, y1)], fill=a)
+            draw.polygon([(x0, y0), (x1, y1), (x0, y1)], fill=b)
         for j, leaf in enumerate(leaves):
-            ca = tuple(int(v) for v in pal[indices[base + 2 * j]])
-            cb = tuple(int(v) for v in pal[indices[base + 2 * j + 1]])
+            ca = tuple(int(v) for v in people_pal[people_indices[people_off[f] + 2 * j]])
+            cb = tuple(int(v) for v in people_pal[people_indices[people_off[f] + 2 * j + 1]])
             t1, t2 = triangles_of(leaf)
             draw.polygon(t1, fill=ca)
             draw.polygon(t2, fill=cb)
-        sheet.paste(frame, (i * (cell_w + 4), 0))
+        sheet.paste(frame, (i * (SRC_W + 4), 0))
     sheet.save(path)
 
 
