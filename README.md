@@ -12,14 +12,16 @@ right away, full screen 240×320:
     1159) drawn on top, following outlines and details, with a 64-colour palette; the regions are
     marked by hand on keyframes every 3 s (`tools/lotus/people_keyframes.json`);
 - frames play at 5 fps, the film loops;
-- `res/phantasm-8bit.mid` loops in the background (MMAPI `audio/midi`). Soft key "Music on/off" toggles it.
+- the film sound `res/film-soundtrack.amr` (AMR-NB 12.2 kbps, MMAPI `audio/amr`) plays with the picture, and the
+  picture follows its media time. The soft key "Sound" cycles film sound → `res/phantasm-8bit.mid` music
+  (MMAPI `audio/midi`, loops) → off. If the device cannot play AMR, the demo falls back to the MIDI score.
 
 ## Layout
 
 | Path | What |
 |------|------|
-| `src/LotusDemo.java` | MIDlet: lifecycle, background MIDI, Exit and Music on/off commands |
-| `src/LotusCanvas.java` | Canvas and playback thread: draws the environment grid, then the people triangles (`fillTriangle`) |
+| `src/LotusDemo.java` | MIDlet: lifecycle, film sound (AMR) or MIDI, Exit and Sound commands |
+| `src/LotusCanvas.java` | Canvas and playback thread: draws the environment grid, then the people triangles (`fillTriangle`); the film clock follows the sound player when there is one |
 | `src/LotusFilm.java` | Streams `res/lotus.bin` and decodes each frame: environment palette, triangle indices read from the frame buffer, and the people tree |
 | `res/lotus.bin` | Format LOT8: 802 frames, each an environment palette, grid indices and a people tree (generated, ~3.3 MB) |
 | `tools/make_lotus_data.py` | Video + people markup → `res/lotus.bin` (environment grid, people quadtree, per-frame and people palettes) |
@@ -31,8 +33,8 @@ right away, full screen 240×320:
 | `tools/kvm/check_film.sh` | Runs `LotusFilm` on the CLDC KVM and on the desktop JVM, compares checksums |
 | `res/phantasm-8bit.mid` | Background music (4 tracks, 100 BPM, 3:19); comments added as Text events, playback unchanged |
 | `tools/comment_midi.py` | Adds comments (tracks, instruments, tempo, length) to a MIDI file and checks that the playback events did not change |
-| `audio/film-soundtrack-amrnb-12k2.amr` | Film soundtrack, AMR-NB 12.2 kbps, 8 kHz mono, 160 s, 256 678 bytes (generated, see below) |
-| `tools/make_film_audio.py` | Film audio track → AMR-NB 12.2 kbps, with the processing described below |
+| `res/film-soundtrack.amr` | Film soundtrack, AMR-NB 12.2 kbps, 8 kHz mono, 160 s, 256 678 bytes (generated, see below) |
+| `tools/make_film_audio.py` | Film audio track → `res/film-soundtrack.amr`, with the processing described below |
 | `releases/` | Committed build artifacts (see `releases/README.md`) |
 
 ## How a frame is modelled
@@ -77,7 +79,7 @@ each frame as it is decoded. Skipped frames are still read so the palette stays 
 ## Film soundtrack (AMR-NB)
 
 `tools/make_film_audio.py` takes the audio of `docs/Phantasm Mineshaft Chase scene.mp4` (AAC 44.1 kHz
-stereo) and writes `audio/film-soundtrack-amrnb-12k2.amr`, a raw AMR-NB file (`#!AMR` header, 8 kHz
+stereo) and writes `res/film-soundtrack.amr`, a raw AMR-NB file (`#!AMR` header, 8 kHz
 mono, the 12.2 kbps mode, DTX off). The chain works within the AMR-NB band (about 200–3400 Hz):
 
 1. Downmix to mono (mid = (L + R) / 2).
@@ -93,7 +95,14 @@ The result is −19.0 LUFS and −1.5 dBTP at the encoder input, and −20.0 LUF
 decoding. The gain is limited by the true-peak cap, so it stays about 1 LU under the target. The
 file averages 12.8 kbit/s on the wire, because each 12.2 kbps AMR frame is 32 bytes with its header.
 Needs numpy, scipy, soundfile, and an ffmpeg built with `libopencore_amrnb` (set `FFMPEG`, or use the
-`imageio-ffmpeg` package, whose static build has it). The file is not in the jar.
+`imageio-ffmpeg` package, whose static build has it). The file is packed into the jar, which adds
+257 KB (the jar is 1 835 421 bytes with it).
+
+On the device the picture is driven by the soundtrack: `LotusCanvas` takes its clock from
+`Player.getMediaTime()` while the AMR player runs, and from the wall clock otherwise. When the sound
+is switched on, the soundtrack starts from the current film time. The film loops, the sound loops too
+(`setLoopCount(-1)`), and the film length (802 frames at 5 fps = 160.4 s) matches the file. Not tested on
+a device or emulator yet.
 
 ## Comments in the MIDI
 

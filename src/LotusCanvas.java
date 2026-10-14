@@ -2,6 +2,7 @@ import java.io.IOException;
 
 import javax.microedition.lcdui.Canvas;
 import javax.microedition.lcdui.Graphics;
+import javax.microedition.media.Player;
 
 /**
  * Full-screen canvas that plays the film on its own thread. Playback time advances only while
@@ -10,6 +11,9 @@ import javax.microedition.lcdui.Graphics;
  * Drawing: the environment grid first (two flat triangles per cell), then the people triangles
  * on top. All with Graphics.fillTriangle. The thread and paint() share the film state; the
  * thread waits for paint via serviceRepaints(), and both sides hold the film's lock.
+ *
+ * Sync: while an audio player is set with setAudioClock(), the film clock follows its media time,
+ * so the picture stays on the soundtrack. Otherwise the clock runs on the wall clock.
  */
 final class LotusCanvas extends Canvas implements Runnable {
 
@@ -19,7 +23,8 @@ final class LotusCanvas extends Canvas implements Runnable {
     private final LotusFilm film;
 
     private volatile Thread thread;
-    private long clock;                        // film time, advances only while running
+    private volatile long clock;               // film time, advances only while running
+    private volatile Player audioClock;        // player whose media time drives the clock, or null
 
     LotusCanvas(LotusFilm film) {
         setFullScreenMode(true);
@@ -37,6 +42,27 @@ final class LotusCanvas extends Canvas implements Runnable {
         thread = null;
     }
 
+    /** Player whose media time drives the film clock, or null for the wall clock. */
+    void setAudioClock(Player p) {
+        audioClock = p;
+    }
+
+    /** Current film time in milliseconds. */
+    long clockMs() {
+        return clock;
+    }
+
+    /** Media time of the player in milliseconds, or -1 if there is no player or it is unknown. */
+    private static long audioMs(Player p) {
+        if (p == null) return -1;
+        try {
+            long us = p.getMediaTime();
+            return us < 0 ? -1 : us / 1000;
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
     public void run() {
         Thread me = Thread.currentThread();
         long last = System.currentTimeMillis();
@@ -46,7 +72,8 @@ final class LotusCanvas extends Canvas implements Runnable {
             long dt = now - last;
             last = now;
             if (dt > MAX_STEP) dt = MAX_STEP;
-            clock += dt;
+            long audio = audioMs(audioClock);
+            clock = audio >= 0 ? audio : clock + dt;
 
             int wanted = film.frameAt(clock);
             if (wanted != shown) {

@@ -117,7 +117,7 @@ def band_db(x, rate, lo, hi):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--video", default=os.path.join(ROOT, "docs", "Phantasm Mineshaft Chase scene.mp4"))
-    ap.add_argument("--out", default=os.path.join(ROOT, "audio", "film-soundtrack-amrnb-12k2.amr"))
+    ap.add_argument("--out", default=os.path.join(ROOT, "res", "film-soundtrack.amr"))
     ap.add_argument("--work", default=os.path.join(ROOT, "build", "audio"),
                     help="scratch directory (git-ignored)")
     args = ap.parse_args()
