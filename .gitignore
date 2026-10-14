@@ -26,3 +26,4 @@ deployed/
 
 ### Mac OS ###
 .DS_Store
+build/
