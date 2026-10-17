@@ -1,0 +1,10 @@
+Manifest-Version: 1.0
+MicroEdition-Configuration: CLDC-1.1
+MicroEdition-Profile: MIDP-2.0
+MIDlet-Name: LCDUI Conformance Suite
+MIDlet-Version: 1.0.0
+MIDlet-Vendor: klaxons1
+MIDlet-1: LCDUI Conformance Suite,,lcduitester
+LCDUITest-Version: 1.0
+MIDlet-Jar-URL: lcduitest.jar
+MIDlet-Jar-Size: 518266
