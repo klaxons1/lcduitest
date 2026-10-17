@@ -13,6 +13,7 @@ import javax.microedition.lcdui.Graphics;
 /** Post-run summary with access to the full report. */
 public final class SummaryCanvas extends Canvas implements CommandListener {
 
+    private final String fileStatus;
     private final Runner runner;
     private final Report report;
     private final MenuCanvas menu;
@@ -20,7 +21,8 @@ public final class SummaryCanvas extends Canvas implements CommandListener {
     private final Command reportCommand = new Command("Report", Command.OK, 1);
     private final Command menuCommand = new Command("Menu", Command.BACK, 1);
 
-    public SummaryCanvas(Runner runner, Report report, MenuCanvas menu) {
+    public SummaryCanvas(Runner runner, Report report, MenuCanvas menu, String fileStatus) {
+        this.fileStatus = fileStatus;
         this.runner = runner;
         this.report = report;
         this.menu = menu;
@@ -90,7 +92,7 @@ public final class SummaryCanvas extends Canvas implements CommandListener {
         g.drawString("OK / FIRE: full report", 3, y, Graphics.TOP | Graphics.LEFT);
         g.drawString("BACK / LEFT: main menu", 3, y + small.getHeight(),
                 Graphics.TOP | Graphics.LEFT);
-        g.drawString("Report saved to RMS as lcdtest-report", 3,
+        g.drawString(trim(fileStatus, small, w - 6), 3,
                 y + 2 * small.getHeight(), Graphics.TOP | Graphics.LEFT);
     }
 

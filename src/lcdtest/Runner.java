@@ -562,6 +562,14 @@ public final class Runner {
         System.out.print(report.toHuman());
         System.out.println("LCDTEST-HUMAN-END");
         ReportStore.save(machine);
+        String fileStatus;
+        try {
+            FileReportStore.save(report.toHuman() + "\n" + machine);
+            fileStatus = "TXT: /root/lcduitest-report.txt";
+        } catch (Throwable t) {
+            fileStatus = "TXT save failed: " + Ctx.exText(t);
+        }
+        System.out.println(fileStatus);
         if (autorun) {
             System.out.println("LCDTEST-END");
             try {
@@ -570,7 +578,7 @@ public final class Runner {
                 System.out.println("LCDTEST: notifyDestroyed threw " + Ctx.exText(t));
             }
         } else {
-            SummaryCanvas summary = new SummaryCanvas(this, report, menu);
+            SummaryCanvas summary = new SummaryCanvas(this, report, menu, fileStatus);
             display.setCurrent(summary);
         }
     }

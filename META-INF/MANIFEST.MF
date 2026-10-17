@@ -6,3 +6,4 @@ MIDlet-Version: 1.0.0
 MIDlet-Vendor: klaxons1
 MIDlet-1: LCDUI Conformance Suite,,lcduitester
 LCDUITest-Version: 1.0
+MIDlet-Permissions-Opt: javax.microedition.io.Connector.file.write
